@@ -250,12 +250,13 @@ impl Document {
 
     pub fn insert_char(&mut self, c: char) {
         // Record undo action
-        self.undo_manager.add_action(crate::undo::UndoAction::InsertText {
-            line: self.cursor_line,
-            column: self.cursor_column,
-            text: c.to_string(),
-        });
-        
+        self.undo_manager
+            .add_action(crate::undo::UndoAction::InsertText {
+                line: self.cursor_line,
+                column: self.cursor_column,
+                text: c.to_string(),
+            });
+
         self.lines[self.cursor_line].insert(self.cursor_column, c);
         self.cursor_column += 1;
         self.modified = true;
@@ -264,14 +265,15 @@ impl Document {
     pub fn insert_newline(&mut self) {
         let current_line = &self.lines[self.cursor_line];
         let new_line = current_line[self.cursor_column..].to_string();
-        
+
         // Record undo action for splitting the line
-        self.undo_manager.add_action(crate::undo::UndoAction::SplitLine {
-            line: self.cursor_line,
-            column: self.cursor_column,
-            text: new_line.clone(),
-        });
-        
+        self.undo_manager
+            .add_action(crate::undo::UndoAction::SplitLine {
+                line: self.cursor_line,
+                column: self.cursor_column,
+                text: new_line.clone(),
+            });
+
         self.lines[self.cursor_line] = current_line[..self.cursor_column].to_string();
 
         self.cursor_line += 1;
@@ -283,13 +285,17 @@ impl Document {
     pub fn delete_char(&mut self) {
         if self.cursor_column > 0 {
             // Delete character before cursor
-            let deleted_char = self.lines[self.cursor_line].chars().nth(self.cursor_column - 1).unwrap();
-            self.undo_manager.add_action(crate::undo::UndoAction::DeleteText {
-                line: self.cursor_line,
-                column: self.cursor_column - 1,
-                text: deleted_char.to_string(),
-            });
-            
+            let deleted_char = self.lines[self.cursor_line]
+                .chars()
+                .nth(self.cursor_column - 1)
+                .unwrap();
+            self.undo_manager
+                .add_action(crate::undo::UndoAction::DeleteText {
+                    line: self.cursor_line,
+                    column: self.cursor_column - 1,
+                    text: deleted_char.to_string(),
+                });
+
             self.lines[self.cursor_line].remove(self.cursor_column - 1);
             self.cursor_column -= 1;
             self.modified = true;
@@ -297,14 +303,15 @@ impl Document {
             // Join with previous line
             let current_line = self.lines.remove(self.cursor_line);
             let previous_line_len = self.lines[self.cursor_line - 1].len();
-            
+
             // Record undo action for joining lines
-            self.undo_manager.add_action(crate::undo::UndoAction::JoinLines {
-                line: self.cursor_line - 1,
-                separator: String::new(),
-                second_line_text: current_line.clone(),
-            });
-            
+            self.undo_manager
+                .add_action(crate::undo::UndoAction::JoinLines {
+                    line: self.cursor_line - 1,
+                    separator: String::new(),
+                    second_line_text: current_line.clone(),
+                });
+
             self.cursor_line -= 1;
             self.cursor_column = previous_line_len;
             self.lines[self.cursor_line].push_str(&current_line);
@@ -317,24 +324,26 @@ impl Document {
         if self.cursor_column < line.len() {
             // Delete character at cursor
             let deleted_char = line.chars().nth(self.cursor_column).unwrap();
-            self.undo_manager.add_action(crate::undo::UndoAction::DeleteText {
-                line: self.cursor_line,
-                column: self.cursor_column,
-                text: deleted_char.to_string(),
-            });
+            self.undo_manager
+                .add_action(crate::undo::UndoAction::DeleteText {
+                    line: self.cursor_line,
+                    column: self.cursor_column,
+                    text: deleted_char.to_string(),
+                });
             line.remove(self.cursor_column);
             self.modified = true;
         } else if self.cursor_line < self.lines.len() - 1 {
             // Join with next line
             let next_line = self.lines.remove(self.cursor_line + 1);
-            
+
             // Record undo action for joining lines
-            self.undo_manager.add_action(crate::undo::UndoAction::JoinLines {
-                line: self.cursor_line,
-                separator: String::new(),
-                second_line_text: next_line.clone(),
-            });
-            
+            self.undo_manager
+                .add_action(crate::undo::UndoAction::JoinLines {
+                    line: self.cursor_line,
+                    separator: String::new(),
+                    second_line_text: next_line.clone(),
+                });
+
             self.lines[self.cursor_line].push_str(&next_line);
             self.modified = true;
         }
@@ -474,11 +483,12 @@ impl Document {
             // Delete character before cursor
             let line = &mut self.lines[self.cursor_line];
             let deleted_char = line.chars().nth(self.cursor_column - 1).unwrap();
-            self.undo_manager.add_action(crate::undo::UndoAction::DeleteText {
-                line: self.cursor_line,
-                column: self.cursor_column - 1,
-                text: deleted_char.to_string(),
-            });
+            self.undo_manager
+                .add_action(crate::undo::UndoAction::DeleteText {
+                    line: self.cursor_line,
+                    column: self.cursor_column - 1,
+                    text: deleted_char.to_string(),
+                });
             line.remove(self.cursor_column - 1);
             self.cursor_column -= 1;
             self.modified = true;
@@ -486,14 +496,15 @@ impl Document {
             // Join with previous line
             let current_line = self.lines.remove(self.cursor_line);
             let previous_line_len = self.lines[self.cursor_line - 1].len();
-            
+
             // Record undo action for joining lines
-            self.undo_manager.add_action(crate::undo::UndoAction::JoinLines {
-                line: self.cursor_line - 1,
-                separator: String::new(),
-                second_line_text: current_line.clone(),
-            });
-            
+            self.undo_manager
+                .add_action(crate::undo::UndoAction::JoinLines {
+                    line: self.cursor_line - 1,
+                    separator: String::new(),
+                    second_line_text: current_line.clone(),
+                });
+
             self.cursor_line -= 1;
             self.cursor_column = previous_line_len;
             self.lines[self.cursor_line].push_str(&current_line);
@@ -650,7 +661,7 @@ impl Document {
     pub fn delete_to_first_non_whitespace(&mut self) {
         let line = &self.lines[self.cursor_line].clone();
         let first_non_ws = line.chars().position(|c| !c.is_whitespace()).unwrap_or(0);
-        
+
         if self.cursor_column > first_non_ws {
             self.lines[self.cursor_line].drain(first_non_ws..self.cursor_column);
             self.cursor_column = first_non_ws;
@@ -659,16 +670,18 @@ impl Document {
     }
 
     pub fn delete_to_end_of_file(&mut self) {
-        if self.cursor_line < self.lines.len() - 1 || self.cursor_column < self.lines[self.cursor_line].len() {
+        if self.cursor_line < self.lines.len() - 1
+            || self.cursor_column < self.lines[self.cursor_line].len()
+        {
             // Delete from cursor to end of current line
             let line = &mut self.lines[self.cursor_line];
             line.drain(self.cursor_column..);
-            
+
             // Delete all subsequent lines
             if self.cursor_line < self.lines.len() - 1 {
                 self.lines.drain((self.cursor_line + 1)..);
             }
-            
+
             self.modified = true;
         }
     }
@@ -678,12 +691,12 @@ impl Document {
             // Delete from start of current line to cursor
             let line = &mut self.lines[self.cursor_line];
             line.drain(0..self.cursor_column);
-            
+
             // Delete all previous lines
             if self.cursor_line > 0 {
                 self.lines.drain(0..self.cursor_line);
             }
-            
+
             self.cursor_line = 0;
             self.cursor_column = 0;
             self.modified = true;
@@ -820,7 +833,7 @@ impl Document {
     /// Normalize various Unicode characters to their ASCII equivalents
     fn normalize_to_ascii(text: &str) -> String {
         let mut result = String::with_capacity(text.len());
-        
+
         for ch in text.chars() {
             match ch {
                 // Various space characters → ASCII space
@@ -880,7 +893,7 @@ impl Document {
 
                 // Keep ASCII characters as-is
                 _ if ch.is_ascii() => result.push(ch),
-                
+
                 // For non-ASCII characters, try fallback conversion
                 _ => {
                     if let Some(ascii_equivalent) = Self::unicode_to_ascii_fallback(ch) {
@@ -908,7 +921,7 @@ impl Document {
             'Ñ' => Some("N"),
             'Ç' => Some("C"),
             'Ý' | 'Ÿ' => Some("Y"),
-            
+
             // Accented letters → base letters (lowercase)
             'à' | 'á' | 'â' | 'ã' | 'ä' | 'å' | 'ā' | 'ă' | 'ą' => Some("a"),
             'è' | 'é' | 'ê' | 'ë' | 'ē' | 'ĕ' | 'ė' | 'ę' | 'ě' => Some("e"),
@@ -918,7 +931,7 @@ impl Document {
             'ñ' => Some("n"),
             'ç' => Some("c"),
             'ý' | 'ÿ' => Some("y"),
-            
+
             _ => None,
         }
     }
@@ -927,20 +940,22 @@ impl Document {
         if self.expand_tab {
             // Insert spaces
             let spaces = " ".repeat(tab_width);
-            self.undo_manager.add_action(crate::undo::UndoAction::InsertText {
-                line: self.cursor_line,
-                column: self.cursor_column,
-                text: spaces.clone(),
-            });
+            self.undo_manager
+                .add_action(crate::undo::UndoAction::InsertText {
+                    line: self.cursor_line,
+                    column: self.cursor_column,
+                    text: spaces.clone(),
+                });
             self.lines[self.cursor_line].insert_str(self.cursor_column, &spaces);
             self.cursor_column += tab_width;
         } else {
             // Insert actual tab
-            self.undo_manager.add_action(crate::undo::UndoAction::InsertText {
-                line: self.cursor_line,
-                column: self.cursor_column,
-                text: "\t".to_string(),
-            });
+            self.undo_manager
+                .add_action(crate::undo::UndoAction::InsertText {
+                    line: self.cursor_line,
+                    column: self.cursor_column,
+                    text: "\t".to_string(),
+                });
             self.lines[self.cursor_line].insert(self.cursor_column, '\t');
             self.cursor_column += 1;
         }
@@ -1029,7 +1044,12 @@ impl Document {
     }
 
     /// Set a local mark (a-z) for this buffer
-    pub fn set_local_mark(&mut self, mark_char: char, line: usize, column: usize) -> Result<(), String> {
+    pub fn set_local_mark(
+        &mut self,
+        mark_char: char,
+        line: usize,
+        column: usize,
+    ) -> Result<(), String> {
         if mark_char.is_ascii_lowercase() {
             self.local_marks.insert(mark_char, (line, column));
             Ok(())
@@ -1058,7 +1078,7 @@ impl Document {
     }
 
     // Yank (copy) operations - return text to be copied to registers
-    
+
     pub fn yank_line(&self) -> String {
         if !self.lines.is_empty() && self.cursor_line < self.lines.len() {
             self.lines[self.cursor_line].clone()
@@ -1066,7 +1086,7 @@ impl Document {
             String::new()
         }
     }
-    
+
     pub fn yank_to_end_of_line(&self) -> String {
         if self.cursor_line < self.lines.len() {
             let line = &self.lines[self.cursor_line];
@@ -1079,63 +1099,63 @@ impl Document {
             String::new()
         }
     }
-    
+
     pub fn yank_word_forward(&self) -> String {
         let start_line = self.cursor_line;
         let start_col = self.cursor_column;
-        
+
         let (end_line, end_col) = self.calculate_word_forward_position();
-        
+
         self.get_text_range(start_line, start_col, end_line, end_col)
     }
-    
+
     pub fn yank_big_word_forward(&self) -> String {
         let start_line = self.cursor_line;
         let start_col = self.cursor_column;
-        
+
         let (end_line, end_col) = self.calculate_big_word_forward_position();
-        
+
         self.get_text_range(start_line, start_col, end_line, end_col)
     }
-    
+
     pub fn yank_word_backward(&self) -> String {
         let end_line = self.cursor_line;
         let end_col = self.cursor_column;
-        
+
         let (start_line, start_col) = self.calculate_word_backward_position();
-        
+
         self.get_text_range(start_line, start_col, end_line, end_col)
     }
-    
+
     pub fn yank_big_word_backward(&self) -> String {
         let end_line = self.cursor_line;
         let end_col = self.cursor_column;
-        
+
         let (start_line, start_col) = self.calculate_big_word_backward_position();
-        
+
         self.get_text_range(start_line, start_col, end_line, end_col)
     }
-    
+
     pub fn yank_to_end_of_word(&self) -> String {
         let start_line = self.cursor_line;
         let start_col = self.cursor_column;
-        
+
         let (end_line, end_col_raw) = self.calculate_word_end_position();
         let end_col = end_col_raw + 1; // Include the character at cursor
-        
+
         self.get_text_range(start_line, start_col, end_line, end_col)
     }
-    
+
     pub fn yank_to_end_of_big_word(&self) -> String {
         let start_line = self.cursor_line;
         let start_col = self.cursor_column;
-        
+
         let (end_line, end_col_raw) = self.calculate_big_word_end_position();
         let end_col = end_col_raw + 1; // Include the character at cursor
-        
+
         self.get_text_range(start_line, start_col, end_line, end_col)
     }
-    
+
     pub fn yank_to_start_of_line(&self) -> String {
         if self.cursor_line < self.lines.len() {
             let line = &self.lines[self.cursor_line];
@@ -1148,7 +1168,7 @@ impl Document {
             String::new()
         }
     }
-    
+
     pub fn yank_to_first_non_whitespace(&self) -> String {
         if self.cursor_line < self.lines.len() {
             let line = &self.lines[self.cursor_line];
@@ -1162,7 +1182,7 @@ impl Document {
             String::new()
         }
     }
-    
+
     pub fn yank_to_end_of_file(&self) -> String {
         let start_line = self.cursor_line;
         let start_col = self.cursor_column;
@@ -1172,72 +1192,72 @@ impl Document {
         } else {
             0
         };
-        
+
         self.get_text_range(start_line, start_col, end_line, end_col)
     }
-    
+
     pub fn yank_to_start_of_file(&self) -> String {
         let start_line = 0;
         let start_col = 0;
         let end_line = self.cursor_line;
         let end_col = self.cursor_column;
-        
+
         self.get_text_range(start_line, start_col, end_line, end_col)
     }
-    
+
     pub fn yank_until_char(&self, target: char) -> String {
         let start_line = self.cursor_line;
         let start_col = self.cursor_column;
-        
+
         if let Some((end_line, end_col)) = self.find_char_position(target, true, true) {
             self.get_text_range(start_line, start_col, end_line, end_col)
         } else {
             String::new()
         }
     }
-    
+
     pub fn yank_until_char_backward(&self, target: char) -> String {
         let end_line = self.cursor_line;
         let end_col = self.cursor_column;
-        
+
         if let Some((start_line, start_col)) = self.find_char_position(target, false, true) {
             self.get_text_range(start_line, start_col + 1, end_line, end_col)
         } else {
             String::new()
         }
     }
-    
+
     pub fn yank_find_char(&self, target: char) -> String {
         let start_line = self.cursor_line;
         let start_col = self.cursor_column;
-        
+
         if let Some((end_line, end_col)) = self.find_char_position(target, true, false) {
             self.get_text_range(start_line, start_col, end_line, end_col + 1)
         } else {
             String::new()
         }
     }
-    
+
     pub fn yank_find_char_backward(&self, target: char) -> String {
         let end_line = self.cursor_line;
         let end_col = self.cursor_column;
-        
+
         if let Some((start_line, start_col)) = self.find_char_position(target, false, false) {
             self.get_text_range(start_line, start_col, end_line, end_col)
         } else {
             String::new()
         }
     }
-    
+
     // Change (delete + insert mode) operations - return deleted text and modify document
-    
+
     #[allow(dead_code)]
     pub fn change_char(&mut self) -> String {
         let deleted = self.get_char_at_cursor();
         self.delete_char_forward();
         deleted
     }
-    
+
     pub fn change_line(&mut self) -> String {
         let deleted = self.lines[self.cursor_line].clone();
         self.lines[self.cursor_line].clear();
@@ -1245,97 +1265,97 @@ impl Document {
         self.modified = true;
         deleted
     }
-    
+
     pub fn change_to_end_of_line(&mut self) -> String {
         let deleted = self.yank_to_end_of_line();
         self.delete_to_end_of_line();
         deleted
     }
-    
+
     pub fn change_word_forward(&mut self) -> String {
         let deleted = self.yank_word_forward();
         self.delete_word_forward();
         deleted
     }
-    
+
     pub fn change_big_word_forward(&mut self) -> String {
         let deleted = self.yank_big_word_forward();
         self.delete_big_word_forward();
         deleted
     }
-    
+
     pub fn change_word_backward(&mut self) -> String {
         let deleted = self.yank_word_backward();
         self.delete_word_backward();
         deleted
     }
-    
+
     pub fn change_big_word_backward(&mut self) -> String {
         let deleted = self.yank_big_word_backward();
         self.delete_big_word_backward();
         deleted
     }
-    
+
     pub fn change_to_end_of_word(&mut self) -> String {
         let deleted = self.yank_to_end_of_word();
         self.delete_to_end_of_word();
         deleted
     }
-    
+
     pub fn change_to_end_of_big_word(&mut self) -> String {
         let deleted = self.yank_to_end_of_big_word();
         self.delete_to_end_of_big_word();
         deleted
     }
-    
+
     pub fn change_to_start_of_line(&mut self) -> String {
         let deleted = self.yank_to_start_of_line();
         self.delete_to_start_of_line();
         deleted
     }
-    
+
     pub fn change_to_first_non_whitespace(&mut self) -> String {
         let deleted = self.yank_to_first_non_whitespace();
         self.delete_to_first_non_whitespace();
         deleted
     }
-    
+
     pub fn change_to_end_of_file(&mut self) -> String {
         let deleted = self.yank_to_end_of_file();
         self.delete_to_end_of_file();
         deleted
     }
-    
+
     pub fn change_to_start_of_file(&mut self) -> String {
         let deleted = self.yank_to_start_of_file();
         self.delete_to_start_of_file();
         deleted
     }
-    
+
     pub fn change_until_char(&mut self, target: char) -> String {
         let deleted = self.yank_until_char(target);
         self.delete_until_char(target);
         deleted
     }
-    
+
     pub fn change_until_char_backward(&mut self, target: char) -> String {
         let deleted = self.yank_until_char_backward(target);
         self.delete_until_char_backward(target);
         deleted
     }
-    
+
     pub fn change_find_char(&mut self, target: char) -> String {
         let deleted = self.yank_find_char(target);
         self.delete_find_char(target);
         deleted
     }
-    
+
     pub fn change_find_char_backward(&mut self, target: char) -> String {
         let deleted = self.yank_find_char_backward(target);
         self.delete_find_char_backward(target);
         deleted
     }
-    
+
     // Helper method to get character at cursor
     #[allow(dead_code)]
     fn get_char_at_cursor(&self) -> String {
@@ -1359,52 +1379,61 @@ impl Document {
         if self.cursor_line >= self.lines.len() - 1 {
             return false;
         }
-        
+
         let current_line = self.cursor_line;
         let next_line = current_line + 1;
-        
+
         // Save original state for undo
         let _original_cursor = (self.cursor_line, self.cursor_column);
-        
+
         // Get the lines to join
         let mut current_line_text = self.lines[current_line].clone();
         let next_line_text = self.lines[next_line].clone();
-        
+
         // Remember cursor position before join for undo
         let join_position = current_line_text.len();
-        
+
         // Add a space between lines unless the current line ends with whitespace
         // or the next line starts with whitespace (vim behavior)
-        let needs_space = !current_line_text.ends_with(' ') && 
-                         !current_line_text.ends_with('\t') &&
-                         !next_line_text.starts_with(' ') && 
-                         !next_line_text.starts_with('\t') &&
-                         !current_line_text.is_empty() &&
-                         !next_line_text.is_empty();
-        
+        let needs_space = !current_line_text.ends_with(' ')
+            && !current_line_text.ends_with('\t')
+            && !next_line_text.starts_with(' ')
+            && !next_line_text.starts_with('\t')
+            && !current_line_text.is_empty()
+            && !next_line_text.is_empty();
+
         if needs_space {
             current_line_text.push(' ');
         }
-        
+
         // Trim leading whitespace from the next line
         let trimmed_next = next_line_text.trim_start();
         current_line_text.push_str(trimmed_next);
-        
+
         // Record undo information
         let second_line_text = self.lines[next_line].clone();
-        self.undo_manager.add_action(crate::undo::UndoAction::JoinLines {
-            line: current_line,
-            separator: if needs_space { " ".to_string() } else { String::new() },
-            second_line_text,
-        });
-        
+        self.undo_manager
+            .add_action(crate::undo::UndoAction::JoinLines {
+                line: current_line,
+                separator: if needs_space {
+                    " ".to_string()
+                } else {
+                    String::new()
+                },
+                second_line_text,
+            });
+
         // Update the document
         self.lines[current_line] = current_line_text;
         self.lines.remove(next_line);
-        
+
         // Position cursor at the join point
-        self.cursor_column = if needs_space { join_position + 1 } else { join_position };
-        
+        self.cursor_column = if needs_space {
+            join_position + 1
+        } else {
+            join_position
+        };
+
         self.modified = true;
         true
     }
@@ -1415,17 +1444,17 @@ impl Document {
         if self.cursor_line >= self.lines.len() {
             return false;
         }
-        
+
         let line = &mut self.lines[self.cursor_line];
         if self.cursor_column >= line.len() {
             return false;
         }
-        
+
         let chars: Vec<char> = line.chars().collect();
         if self.cursor_column >= chars.len() {
             return false;
         }
-        
+
         let original_char = chars[self.cursor_column];
         let new_char = if original_char.is_uppercase() {
             original_char.to_lowercase().collect::<String>()
@@ -1434,95 +1463,111 @@ impl Document {
         } else {
             return false; // No case to toggle
         };
-        
+
         // Record undo action
-        self.undo_manager.add_action(crate::undo::UndoAction::DeleteText {
-            line: self.cursor_line,
-            column: self.cursor_column,
-            text: original_char.to_string(),
-        });
-        self.undo_manager.add_action(crate::undo::UndoAction::InsertText {
-            line: self.cursor_line,
-            column: self.cursor_column,
-            text: new_char.clone(),
-        });
-        
+        self.undo_manager
+            .add_action(crate::undo::UndoAction::DeleteText {
+                line: self.cursor_line,
+                column: self.cursor_column,
+                text: original_char.to_string(),
+            });
+        self.undo_manager
+            .add_action(crate::undo::UndoAction::InsertText {
+                line: self.cursor_line,
+                column: self.cursor_column,
+                text: new_char.clone(),
+            });
+
         // Replace character
         let mut new_chars = chars;
         new_chars[self.cursor_column] = new_char.chars().next().unwrap();
         *line = new_chars.into_iter().collect();
-        
+
         // Move cursor forward (vim behavior)
         if self.cursor_column < line.len() - 1 {
             self.cursor_column += 1;
         }
-        
+
         self.modified = true;
         true
     }
-    
+
     /// Convert current line to lowercase
     pub fn lowercase_line(&mut self) {
         if self.cursor_line >= self.lines.len() {
             return;
         }
-        
+
         let line = &mut self.lines[self.cursor_line];
         let original_line = line.clone();
         let lowercase_line = line.to_lowercase();
-        
+
         if original_line != lowercase_line {
             // Record undo action
-            self.undo_manager.add_action(crate::undo::UndoAction::DeleteText {
-                line: self.cursor_line,
-                column: 0,
-                text: original_line,
-            });
-            self.undo_manager.add_action(crate::undo::UndoAction::InsertText {
-                line: self.cursor_line,
-                column: 0,
-                text: lowercase_line.clone(),
-            });
-            
+            self.undo_manager
+                .add_action(crate::undo::UndoAction::DeleteText {
+                    line: self.cursor_line,
+                    column: 0,
+                    text: original_line,
+                });
+            self.undo_manager
+                .add_action(crate::undo::UndoAction::InsertText {
+                    line: self.cursor_line,
+                    column: 0,
+                    text: lowercase_line.clone(),
+                });
+
             *line = lowercase_line;
             self.modified = true;
+            // Ensure cursor column remains valid after line modification
+            self.clamp_cursor_column();
         }
     }
-    
+
     /// Convert current line to uppercase
     pub fn uppercase_line(&mut self) {
         if self.cursor_line >= self.lines.len() {
             return;
         }
-        
+
         let line = &mut self.lines[self.cursor_line];
         let original_line = line.clone();
         let uppercase_line = line.to_uppercase();
-        
+
         if original_line != uppercase_line {
             // Record undo action
-            self.undo_manager.add_action(crate::undo::UndoAction::DeleteText {
-                line: self.cursor_line,
-                column: 0,
-                text: original_line,
-            });
-            self.undo_manager.add_action(crate::undo::UndoAction::InsertText {
-                line: self.cursor_line,
-                column: 0,
-                text: uppercase_line.clone(),
-            });
-            
+            self.undo_manager
+                .add_action(crate::undo::UndoAction::DeleteText {
+                    line: self.cursor_line,
+                    column: 0,
+                    text: original_line,
+                });
+            self.undo_manager
+                .add_action(crate::undo::UndoAction::InsertText {
+                    line: self.cursor_line,
+                    column: 0,
+                    text: uppercase_line.clone(),
+                });
+
             *line = uppercase_line;
             self.modified = true;
+            // Ensure cursor column remains valid after line modification
+            self.clamp_cursor_column();
         }
     }
 
     // Helper method to get text in a range
-    fn get_text_range(&self, start_line: usize, start_col: usize, end_line: usize, end_col: usize) -> String {
+    fn get_text_range(
+        &self,
+        start_line: usize,
+        start_col: usize,
+        end_line: usize,
+        end_col: usize,
+    ) -> String {
         if start_line >= self.lines.len() || end_line >= self.lines.len() {
             return String::new();
         }
-        
+
         if start_line == end_line {
             let line = &self.lines[start_line];
             let start = start_col.min(line.len());
@@ -1534,7 +1579,7 @@ impl Document {
             }
         } else {
             let mut result = String::new();
-            
+
             // First line
             let first_line = &self.lines[start_line];
             let start = start_col.min(first_line.len());
@@ -1542,20 +1587,20 @@ impl Document {
                 result.push_str(&first_line[start..]);
             }
             result.push('\n');
-            
+
             // Middle lines
             for i in (start_line + 1)..end_line {
                 result.push_str(&self.lines[i]);
                 result.push('\n');
             }
-            
+
             // Last line
             if end_line > start_line {
                 let last_line = &self.lines[end_line];
                 let end = end_col.min(last_line.len());
                 result.push_str(&last_line[..end]);
             }
-            
+
             result
         }
     }
@@ -1564,7 +1609,7 @@ impl Document {
     fn calculate_word_forward_position(&self) -> (usize, usize) {
         let mut cursor_line = self.cursor_line;
         let mut cursor_column = self.cursor_column;
-        
+
         let line = &self.lines[cursor_line];
 
         // If at end of line, move to next line
@@ -1640,7 +1685,7 @@ impl Document {
                 cursor_column = if chars.is_empty() { 0 } else { chars.len() - 1 };
             }
         }
-        
+
         (cursor_line, cursor_column)
     }
 
@@ -1700,42 +1745,40 @@ impl Document {
                 }
             }
         }
-        
+
         (cursor_line, cursor_column)
     }
 
     fn calculate_word_end_position(&self) -> (usize, usize) {
         let cursor_line = self.cursor_line;
         let mut cursor_column = self.cursor_column;
-        
+
         let line = &self.lines[cursor_line];
         if cursor_column < line.len() {
             let chars: Vec<char> = line.chars().collect();
 
             // If on whitespace, move to start of next word first
             if chars[cursor_column].is_whitespace() {
-                while cursor_column < chars.len() && chars[cursor_column].is_whitespace()
-                {
+                while cursor_column < chars.len() && chars[cursor_column].is_whitespace() {
                     cursor_column += 1;
                 }
             }
 
             // Move to end of current word
             while cursor_column < chars.len() - 1
-                && (chars[cursor_column + 1].is_alphanumeric()
-                    || chars[cursor_column + 1] == '_')
+                && (chars[cursor_column + 1].is_alphanumeric() || chars[cursor_column + 1] == '_')
             {
                 cursor_column += 1;
             }
         }
-        
+
         (cursor_line, cursor_column)
     }
 
     fn calculate_big_word_forward_position(&self) -> (usize, usize) {
         let mut cursor_line = self.cursor_line;
         let mut cursor_column = self.cursor_column;
-        
+
         loop {
             let line = &self.lines[cursor_line];
             if cursor_column >= line.len() {
@@ -1750,14 +1793,12 @@ impl Document {
                 let start_col = cursor_column;
 
                 // Skip current big word (non-whitespace)
-                while cursor_column < chars.len() && !chars[cursor_column].is_whitespace()
-                {
+                while cursor_column < chars.len() && !chars[cursor_column].is_whitespace() {
                     cursor_column += 1;
                 }
 
                 // Skip whitespace
-                while cursor_column < chars.len() && chars[cursor_column].is_whitespace()
-                {
+                while cursor_column < chars.len() && chars[cursor_column].is_whitespace() {
                     cursor_column += 1;
                 }
 
@@ -1773,14 +1814,14 @@ impl Document {
                 }
             }
         }
-        
+
         (cursor_line, cursor_column)
     }
 
     fn calculate_big_word_backward_position(&self) -> (usize, usize) {
         let mut cursor_line = self.cursor_line;
         let mut cursor_column = self.cursor_column;
-        
+
         loop {
             if cursor_column == 0 {
                 if cursor_line > 0 {
@@ -1808,38 +1849,40 @@ impl Document {
                 break;
             }
         }
-        
+
         (cursor_line, cursor_column)
     }
 
     fn calculate_big_word_end_position(&self) -> (usize, usize) {
         let cursor_line = self.cursor_line;
         let mut cursor_column = self.cursor_column;
-        
+
         let line = &self.lines[cursor_line];
         if cursor_column < line.len() {
             let chars: Vec<char> = line.chars().collect();
 
             // If on whitespace, move to start of next word first
             if chars[cursor_column].is_whitespace() {
-                while cursor_column < chars.len() && chars[cursor_column].is_whitespace()
-                {
+                while cursor_column < chars.len() && chars[cursor_column].is_whitespace() {
                     cursor_column += 1;
                 }
             }
 
             // Move to end of current big word
-            while cursor_column < chars.len() - 1
-                && !chars[cursor_column + 1].is_whitespace()
-            {
+            while cursor_column < chars.len() - 1 && !chars[cursor_column + 1].is_whitespace() {
                 cursor_column += 1;
             }
         }
-        
+
         (cursor_line, cursor_column)
     }
 
-    fn find_char_position(&self, target: char, forward: bool, before: bool) -> Option<(usize, usize)> {
+    fn find_char_position(
+        &self,
+        target: char,
+        forward: bool,
+        before: bool,
+    ) -> Option<(usize, usize)> {
         let line = &self.lines[self.cursor_line];
         let chars: Vec<char> = line.chars().collect();
         let mut cursor_column = self.cursor_column;
@@ -1873,7 +1916,7 @@ impl Document {
                 }
             }
         }
-        
+
         None
     }
 
@@ -1881,37 +1924,37 @@ impl Document {
         if self.cursor_line >= self.lines.len() {
             return None;
         }
-        
+
         let line = &self.lines[self.cursor_line];
         if self.cursor_column >= line.len() {
             return None;
         }
-        
+
         let chars: Vec<char> = line.chars().collect();
         if chars.is_empty() {
             return None;
         }
-        
+
         let cursor_pos = self.cursor_column.min(chars.len().saturating_sub(1));
         let ch = chars[cursor_pos];
-        
+
         // Only search for words containing alphanumeric characters or underscores
         if !ch.is_alphanumeric() && ch != '_' {
             return None;
         }
-        
+
         // Find start of word (go backward)
         let mut start = cursor_pos;
         while start > 0 && (chars[start - 1].is_alphanumeric() || chars[start - 1] == '_') {
             start -= 1;
         }
-        
+
         // Find end of word (go forward)
         let mut end = cursor_pos;
         while end < chars.len() && (chars[end].is_alphanumeric() || chars[end] == '_') {
             end += 1;
         }
-        
+
         if start < end {
             Some(chars[start..end].iter().collect())
         } else {
@@ -1923,38 +1966,36 @@ impl Document {
         if self.cursor_line >= self.lines.len() {
             return None;
         }
-        
+
         let line = &self.lines[self.cursor_line];
         if self.cursor_column >= line.len() {
             return None;
         }
-        
+
         let chars: Vec<char> = line.chars().collect();
         if chars.is_empty() || self.cursor_column >= chars.len() {
             return None;
         }
-        
+
         let cursor_char = chars[self.cursor_column];
-        
+
         // Define bracket pairs
-        let bracket_pairs = [
-            ('(', ')'),
-            ('[', ']'),
-            ('{', '}'),
-            ('<', '>'),
-        ];
-        
+        let bracket_pairs = [('(', ')'), ('[', ']'), ('{', '}'), ('<', '>')];
+
         // Check if cursor is on a bracket character
-        let (opening, closing, is_opening) = if let Some((open, close)) = bracket_pairs.iter()
-            .find(|(open, _)| *open == cursor_char) {
+        let (opening, closing, is_opening) = if let Some((open, close)) =
+            bracket_pairs.iter().find(|(open, _)| *open == cursor_char)
+        {
             (*open, *close, true)
-        } else if let Some((open, close)) = bracket_pairs.iter()
-            .find(|(_, close)| *close == cursor_char) {
+        } else if let Some((open, close)) = bracket_pairs
+            .iter()
+            .find(|(_, close)| *close == cursor_char)
+        {
             (*open, *close, false)
         } else {
             return None;
         };
-        
+
         if is_opening {
             // Search forward for closing bracket
             self.find_closing_bracket(opening, closing, self.cursor_line, self.cursor_column)
@@ -1963,16 +2004,112 @@ impl Document {
             self.find_opening_bracket(opening, closing, self.cursor_line, self.cursor_column)
         }
     }
-    
-    fn find_closing_bracket(&self, opening: char, closing: char, start_line: usize, start_col: usize) -> Option<(usize, usize)> {
+
+    /// Check if the bracket at the cursor position is unmatched
+    pub fn is_unmatched_bracket(&self) -> Option<(usize, usize)> {
+        if self.cursor_line >= self.lines.len() {
+            return None;
+        }
+
+        let line = &self.lines[self.cursor_line];
+        if self.cursor_column >= line.len() {
+            return None;
+        }
+
+        let chars: Vec<char> = line.chars().collect();
+        if chars.is_empty() || self.cursor_column >= chars.len() {
+            return None;
+        }
+
+        let cursor_char = chars[self.cursor_column];
+
+        // Define bracket pairs
+        let bracket_pairs = [('(', ')'), ('[', ']'), ('{', '}'), ('<', '>')];
+
+        // Check if cursor is on a bracket character
+        let (opening, closing, is_opening) = if let Some((open, close)) =
+            bracket_pairs.iter().find(|(open, _)| *open == cursor_char)
+        {
+            (*open, *close, true)
+        } else if let Some((open, close)) = bracket_pairs
+            .iter()
+            .find(|(_, close)| *close == cursor_char)
+        {
+            (*open, *close, false)
+        } else {
+            return None;
+        };
+
+        // Try to find the matching bracket
+        let has_match = if is_opening {
+            self.find_closing_bracket(opening, closing, self.cursor_line, self.cursor_column)
+                .is_some()
+        } else {
+            self.find_opening_bracket(opening, closing, self.cursor_line, self.cursor_column)
+                .is_some()
+        };
+
+        // If no match found, this bracket is unmatched
+        if !has_match {
+            Some((self.cursor_line, self.cursor_column))
+        } else {
+            None
+        }
+    }
+
+    /// Find all unmatched brackets in the document
+    pub fn find_all_unmatched_brackets(&self) -> Vec<(usize, usize)> {
+        let mut unmatched = Vec::new();
+        let bracket_pairs = [('(', ')'), ('[', ']'), ('{', '}'), ('<', '>')];
+
+        // For each bracket type, track opening brackets and match them with closing ones
+        for (opening, closing) in bracket_pairs {
+            let mut stack: Vec<(usize, usize)> = Vec::new(); // Stack of opening bracket positions
+
+            // Scan through the entire document
+            for (line_idx, line) in self.lines.iter().enumerate() {
+                let chars: Vec<char> = line.chars().collect();
+                for (col_idx, &ch) in chars.iter().enumerate() {
+                    if ch == opening {
+                        // Found opening bracket, push to stack
+                        stack.push((line_idx, col_idx));
+                    } else if ch == closing {
+                        // Found closing bracket, try to match with most recent opening
+                        if stack.is_empty() {
+                            // Unmatched closing bracket
+                            unmatched.push((line_idx, col_idx));
+                        } else {
+                            // Matched pair, remove from stack
+                            stack.pop();
+                        }
+                    }
+                }
+            }
+
+            // Any remaining opening brackets are unmatched
+            unmatched.extend(stack);
+        }
+
+        // Sort by position for consistent ordering
+        unmatched.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)));
+        unmatched
+    }
+
+    fn find_closing_bracket(
+        &self,
+        opening: char,
+        closing: char,
+        start_line: usize,
+        start_col: usize,
+    ) -> Option<(usize, usize)> {
         let mut depth = 1;
         let mut line_idx = start_line;
         let mut col_idx = start_col + 1;
-        
+
         while line_idx < self.lines.len() {
             let line = &self.lines[line_idx];
             let chars: Vec<char> = line.chars().collect();
-            
+
             while col_idx < chars.len() {
                 match chars[col_idx] {
                     ch if ch == opening => depth += 1,
@@ -1986,25 +2123,53 @@ impl Document {
                 }
                 col_idx += 1;
             }
-            
+
             line_idx += 1;
             col_idx = 0;
         }
-        
+
         None
     }
-    
-    fn find_opening_bracket(&self, opening: char, closing: char, start_line: usize, start_col: usize) -> Option<(usize, usize)> {
+
+    fn find_opening_bracket(
+        &self,
+        opening: char,
+        closing: char,
+        start_line: usize,
+        start_col: usize,
+    ) -> Option<(usize, usize)> {
         let mut depth = 1;
         let mut line_idx = start_line;
-        let mut col_idx = if start_col > 0 { start_col - 1 } else { return None; };
-        
+        let mut col_idx = if start_col > 0 {
+            start_col - 1
+        } else {
+            // If we're at the beginning of a line, we need to move to the previous line
+            if start_line == 0 {
+                return None; // Can't go back further
+            }
+            // Find the first non-empty line going backwards
+            let mut search_line = start_line - 1;
+            loop {
+                let line = &self.lines[search_line];
+                let chars: Vec<char> = line.chars().collect();
+                if !chars.is_empty() {
+                    line_idx = search_line;
+                    break chars.len() - 1;
+                }
+                if search_line == 0 {
+                    return None; // No non-empty lines found
+                }
+                search_line -= 1;
+            }
+        };
+
         loop {
             let line = &self.lines[line_idx];
             let chars: Vec<char> = line.chars().collect();
-            
-            if col_idx < chars.len() {
-                loop {
+
+            // Search backwards through the current line
+            loop {
+                if col_idx < chars.len() {
                     match chars[col_idx] {
                         ch if ch == closing => depth += 1,
                         ch if ch == opening => {
@@ -2015,23 +2180,29 @@ impl Document {
                         }
                         _ => {}
                     }
-                    
-                    if col_idx == 0 {
-                        break;
-                    }
-                    col_idx -= 1;
                 }
+
+                if col_idx == 0 {
+                    break;
+                }
+                col_idx -= 1;
             }
-            
+
+            // Move to previous line
             if line_idx == 0 {
                 break;
             }
             line_idx -= 1;
             let prev_line = &self.lines[line_idx];
             let prev_chars: Vec<char> = prev_line.chars().collect();
-            col_idx = if prev_chars.is_empty() { 0 } else { prev_chars.len() - 1 };
+            if prev_chars.is_empty() {
+                // Empty line - continue to next iteration to check previous line
+                col_idx = 0; // Set to 0 so the inner loop will immediately break
+            } else {
+                col_idx = prev_chars.len() - 1;
+            };
         }
-        
+
         None
     }
 }

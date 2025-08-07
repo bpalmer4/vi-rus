@@ -33,11 +33,22 @@ impl Selection {
     }
 
     pub fn get_ordered_bounds(&self) -> (usize, usize, usize, usize) {
-        let (start_line, start_col, end_line, end_col) = if self.start_line < self.end_line ||
-            (self.start_line == self.end_line && self.start_column <= self.end_column) {
-            (self.start_line, self.start_column, self.end_line, self.end_column)
+        let (start_line, start_col, end_line, end_col) = if self.start_line < self.end_line
+            || (self.start_line == self.end_line && self.start_column <= self.end_column)
+        {
+            (
+                self.start_line,
+                self.start_column,
+                self.end_line,
+                self.end_column,
+            )
         } else {
-            (self.end_line, self.end_column, self.start_line, self.start_column)
+            (
+                self.end_line,
+                self.end_column,
+                self.start_line,
+                self.start_column,
+            )
         };
 
         match self.mode {
@@ -64,7 +75,11 @@ impl Selection {
     }
 
     #[allow(dead_code)] // Will be used for visual selection highlighting
-    pub fn get_selected_range_for_line(&self, line: usize, line_len: usize) -> Option<(usize, usize)> {
+    pub fn get_selected_range_for_line(
+        &self,
+        line: usize,
+        line_len: usize,
+    ) -> Option<(usize, usize)> {
         if !self.is_line_in_selection(line) {
             return None;
         }
@@ -78,10 +93,10 @@ impl Selection {
             }
             VisualMode::Char => {
                 let left = if line == start_line { start_col } else { 0 };
-                let right = if line == end_line { 
-                    end_col.min(line_len) 
-                } else { 
-                    line_len 
+                let right = if line == end_line {
+                    end_col.min(line_len)
+                } else {
+                    line_len
                 };
                 Some((left, right))
             }
@@ -189,11 +204,13 @@ impl VisualModeHandler {
                     // Multi-line deletion
                     // Get the remaining parts of first and last lines
                     let first_line_start = if start_line < document.lines.len() {
-                        document.lines[start_line][..start_col.min(document.lines[start_line].len())].to_string()
+                        document.lines[start_line]
+                            [..start_col.min(document.lines[start_line].len())]
+                            .to_string()
                     } else {
                         String::new()
                     };
-                    
+
                     let last_line_end = if end_line < document.lines.len() {
                         let last_line = &document.lines[end_line];
                         let end_pos = end_col.min(last_line.len());
@@ -225,7 +242,7 @@ impl VisualModeHandler {
                         document.lines.remove(start_line);
                     }
                 }
-                
+
                 // Ensure we have at least one line
                 if document.lines.is_empty() {
                     document.lines.push(String::new());
@@ -252,7 +269,12 @@ impl VisualModeHandler {
         document.modified = true;
     }
 
-    pub fn indent_selection(selection: &Selection, document: &mut Document, tab_width: usize, use_spaces: bool) {
+    pub fn indent_selection(
+        selection: &Selection,
+        document: &mut Document,
+        tab_width: usize,
+        use_spaces: bool,
+    ) {
         let (start_line, _, end_line, _) = selection.get_ordered_bounds();
         let indent = if use_spaces {
             " ".repeat(tab_width)
@@ -295,7 +317,7 @@ impl VisualModeHandler {
                 for line_idx in start_line..=end_line {
                     if line_idx < document.lines.len() {
                         let line = &mut document.lines[line_idx];
-                        
+
                         // Try to remove a tab first
                         if line.starts_with('\t') {
                             line.remove(0);
@@ -322,8 +344,10 @@ impl VisualModeHandler {
                             } else {
                                 // Try to remove spaces
                                 let mut removed = 0;
-                                while removed < tab_width && start_col < line.len() && 
-                                      line.chars().nth(start_col) == Some(' ') {
+                                while removed < tab_width
+                                    && start_col < line.len()
+                                    && line.chars().nth(start_col) == Some(' ')
+                                {
                                     line.remove(start_col);
                                     removed += 1;
                                 }

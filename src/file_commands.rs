@@ -188,7 +188,8 @@ impl Controller {
                 if let Ok(line_num) = cmd[..r_pos].parse::<usize>() {
                     let rest = cmd[r_pos + 1..].trim();
                     if rest.starts_with('!') {
-                        return self.execute_and_insert_at_line(rest.strip_prefix('!').unwrap(), line_num);
+                        return self
+                            .execute_and_insert_at_line(rest.strip_prefix('!').unwrap(), line_num);
                     } else {
                         return self.read_file_at_line(rest, line_num);
                     }
@@ -273,9 +274,9 @@ impl Controller {
             Ok(String::from_utf8_lossy(&output.stdout).to_string())
         } else {
             let error_msg = String::from_utf8_lossy(&output.stderr);
-            Err(std::io::Error::other(
-                format!("Command failed: {error_msg}"),
-            ))
+            Err(std::io::Error::other(format!(
+                "Command failed: {error_msg}"
+            )))
         }
     }
 
@@ -294,8 +295,9 @@ impl Controller {
             ) {
                 Ok(count) => {
                     if count > 0 {
-                        self.status_message = format!("{} substitution{} on line {}", 
-                            count, 
+                        self.status_message = format!(
+                            "{} substitution{} on line {}",
+                            count,
                             if count == 1 { "" } else { "s" },
                             current_line + 1
                         );
@@ -308,7 +310,8 @@ impl Controller {
                 }
             }
         } else {
-            self.status_message = "Invalid substitute syntax. Use :s/pattern/replacement/flags".to_string();
+            self.status_message =
+                "Invalid substitute syntax. Use :s/pattern/replacement/flags".to_string();
         }
     }
 
@@ -334,11 +337,16 @@ impl Controller {
             ) {
                 Ok(count) => {
                     if count > 0 {
-                        self.status_message = format!("{} substitution{} across {} line{}", 
-                            count, 
+                        self.status_message = format!(
+                            "{} substitution{} across {} line{}",
+                            count,
                             if count == 1 { "" } else { "s" },
                             self.current_document().lines.len(),
-                            if self.current_document().lines.len() == 1 { "" } else { "s" }
+                            if self.current_document().lines.len() == 1 {
+                                ""
+                            } else {
+                                "s"
+                            }
                         );
                     } else {
                         self.status_message = format!("Pattern not found: {}", parsed.pattern);
@@ -349,7 +357,8 @@ impl Controller {
                 }
             }
         } else {
-            self.status_message = "Invalid substitute syntax. Use :%s/pattern/replacement/flags".to_string();
+            self.status_message =
+                "Invalid substitute syntax. Use :%s/pattern/replacement/flags".to_string();
         }
     }
 
@@ -406,7 +415,13 @@ impl Controller {
                     marks_info.push_str(", ");
                 }
                 if let Some(filename) = filename {
-                    marks_info.push_str(&format!("'{}' {}:{} {}", mark_char, line + 1, column + 1, filename.display()));
+                    marks_info.push_str(&format!(
+                        "'{}' {}:{} {}",
+                        mark_char,
+                        line + 1,
+                        column + 1,
+                        filename.display()
+                    ));
                 } else {
                     marks_info.push_str(&format!("'{}' {}:{}", mark_char, line + 1, column + 1));
                 }
@@ -417,7 +432,7 @@ impl Controller {
 
     pub fn handle_clear_command(&mut self, cmd: &str) {
         let args = cmd.strip_prefix("clear ").unwrap_or("").trim();
-        
+
         match args {
             "marks" => {
                 // Clear both local marks (current document) and global marks (mark manager)
@@ -442,14 +457,15 @@ impl Controller {
                 self.status_message = "Screen cleared".to_string();
             }
             _ => {
-                self.status_message = format!("Unknown clear target: {args}. Use 'marks', 'jumps', or 'all'");
+                self.status_message =
+                    format!("Unknown clear target: {args}. Use 'marks', 'jumps', or 'all'");
             }
         }
     }
 
     pub fn handle_jumps_command(&mut self) {
         let (jump_list, current_position) = self.mark_manager.get_jump_list();
-        
+
         if jump_list.is_empty() {
             self.status_message = "No jumps".to_string();
         } else {
@@ -458,21 +474,28 @@ impl Controller {
                 if i > 0 {
                     jumps_info.push_str(", ");
                 }
-                
+
                 // Mark current position with >
                 let marker = if i == current_position.saturating_sub(1) && current_position > 0 {
                     ">"
                 } else {
                     " "
                 };
-                
-                let filename = entry.filename
+
+                let filename = entry
+                    .filename
                     .as_ref()
                     .and_then(|p| p.file_name())
                     .and_then(|n| n.to_str())
                     .unwrap_or("~");
-                
-                jumps_info.push_str(&format!("{}{}:{} {}", marker, entry.line + 1, entry.column + 1, filename));
+
+                jumps_info.push_str(&format!(
+                    "{}{}:{} {}",
+                    marker,
+                    entry.line + 1,
+                    entry.column + 1,
+                    filename
+                ));
             }
             self.status_message = jumps_info;
         }

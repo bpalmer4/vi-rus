@@ -25,13 +25,13 @@ impl RegisterData {
 pub struct RegisterManager {
     // Named registers (a-z for replace, A-Z for append)
     named_registers: HashMap<char, RegisterData>,
-    
+
     // Default unnamed register (last yank/delete)
     unnamed_register: RegisterData,
-    
+
     // Numbered registers (0-9) for delete history
     numbered_registers: [RegisterData; 10],
-    
+
     // System clipboard register (*)
     #[allow(dead_code)]
     clipboard_register: Option<RegisterData>,
@@ -42,15 +42,22 @@ impl RegisterManager {
         Self {
             named_registers: HashMap::new(),
             unnamed_register: RegisterData::new(String::new(), RegisterType::Character),
-            numbered_registers: std::array::from_fn(|_| RegisterData::new(String::new(), RegisterType::Character)),
+            numbered_registers: std::array::from_fn(|_| {
+                RegisterData::new(String::new(), RegisterType::Character)
+            }),
             clipboard_register: None,
         }
     }
 
     /// Store text in a register
-    pub fn store_in_register(&mut self, register_name: Option<char>, content: String, register_type: RegisterType) {
+    pub fn store_in_register(
+        &mut self,
+        register_name: Option<char>,
+        content: String,
+        register_type: RegisterType,
+    ) {
         let data = RegisterData::new(content.clone(), register_type.clone());
-        
+
         match register_name {
             Some(name) => {
                 match name {
@@ -82,13 +89,12 @@ impl RegisterManager {
                 self.unnamed_register = data;
             }
         }
-        
+
         // Always update unnamed register with the content (vi behavior)
         if register_name != Some('"') {
             self.unnamed_register = RegisterData::new(content, register_type);
         }
     }
-
 
     /// Get content from a register
     pub fn get_register_content(&self, register_name: Option<char>) -> Option<&RegisterData> {
@@ -111,8 +117,6 @@ impl RegisterManager {
             None => Some(&self.unnamed_register), // Default to unnamed register
         }
     }
-
-
 }
 
 #[cfg(test)]
@@ -122,9 +126,9 @@ mod tests {
     #[test]
     fn test_unnamed_register() {
         let mut manager = RegisterManager::new();
-        
+
         manager.store_in_register(None, "hello".to_string(), RegisterType::Character);
-        
+
         let content = manager.get_register_content(None).unwrap();
         assert_eq!(content.content, "hello");
         assert_eq!(content.register_type, RegisterType::Character);
@@ -133,9 +137,9 @@ mod tests {
     #[test]
     fn test_named_registers() {
         let mut manager = RegisterManager::new();
-        
+
         manager.store_in_register(Some('a'), "test".to_string(), RegisterType::Line);
-        
+
         let content = manager.get_register_content(Some('a')).unwrap();
         assert_eq!(content.content, "test");
         assert_eq!(content.register_type, RegisterType::Line);
@@ -144,10 +148,10 @@ mod tests {
     #[test]
     fn test_append_register() {
         let mut manager = RegisterManager::new();
-        
+
         manager.store_in_register(Some('a'), "hello".to_string(), RegisterType::Character);
         manager.store_in_register(Some('A'), " world".to_string(), RegisterType::Character);
-        
+
         let content = manager.get_register_content(Some('a')).unwrap();
         assert_eq!(content.content, "hello world");
     }
@@ -155,11 +159,11 @@ mod tests {
     #[test]
     fn test_numbered_registers_access() {
         let manager = RegisterManager::new();
-        
+
         // Test that numbered registers can be accessed (even if empty)
         let reg0 = manager.get_register_content(Some('0')).unwrap();
         assert_eq!(reg0.content, "");
-        
+
         let reg1 = manager.get_register_content(Some('1')).unwrap();
         assert_eq!(reg1.content, "");
     }

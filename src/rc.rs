@@ -1,7 +1,7 @@
 use crate::controller::Controller;
+use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::env;
 
 #[derive(Debug, Clone)]
 pub struct RcConfig {
@@ -71,7 +71,7 @@ impl RcLoader {
     fn parse_config_content(content: &str, config: &mut RcConfig) {
         for line in content.lines() {
             let line = line.trim();
-            
+
             // Skip empty lines and comments
             if line.is_empty() || line.starts_with('#') || line.starts_with('"') {
                 continue;
@@ -88,12 +88,13 @@ impl RcLoader {
             &line[..pos]
         } else {
             line
-        }.trim();
+        }
+        .trim();
 
         // Handle "set" commands (vim-style)
         if let Some(stripped) = line.strip_prefix("set ") {
             let setting = stripped.trim();
-            
+
             if setting == "nu" || setting == "number" {
                 config.show_line_numbers = true;
             } else if setting == "nonu" || setting == "nonumber" {
@@ -129,7 +130,7 @@ impl RcLoader {
         else if let Some((key, value)) = line.split_once('=') {
             let key = key.trim();
             let value = value.trim();
-            
+
             match key {
                 "tabstop" | "tab_stop" => {
                     if let Ok(tab_stop) = value.parse::<usize>() {
@@ -166,15 +167,23 @@ impl RcLoader {
         controller.view.set_tab_stop(config.tab_stop);
         controller.view.set_line_numbers(config.show_line_numbers);
         controller.view.set_show_whitespace(config.show_whitespace);
-        
+
         // Apply document settings
-        controller.current_document_mut().set_expand_tab(config.expand_tab);
-        
+        controller
+            .current_document_mut()
+            .set_expand_tab(config.expand_tab);
+
         // Apply line ending setting
         match config.line_ending.as_str() {
-            "unix" => controller.current_document_mut().set_line_ending(crate::document::LineEnding::Unix),
-            "dos" => controller.current_document_mut().set_line_ending(crate::document::LineEnding::Windows),
-            "mac" => controller.current_document_mut().set_line_ending(crate::document::LineEnding::Mac),
+            "unix" => controller
+                .current_document_mut()
+                .set_line_ending(crate::document::LineEnding::Unix),
+            "dos" => controller
+                .current_document_mut()
+                .set_line_ending(crate::document::LineEnding::Windows),
+            "mac" => controller
+                .current_document_mut()
+                .set_line_ending(crate::document::LineEnding::Mac),
             _ => {} // Default to Unix
         }
     }
@@ -202,7 +211,8 @@ set fileformat=unix    # Line endings: unix, dos, or mac
 # line_numbers=true
 # show_whitespace=false
 # line_ending=unix
-"#.to_string()
+"#
+        .to_string()
     }
 }
 
@@ -220,9 +230,9 @@ mod tests {
             set list
             set fileformat=dos
         "#;
-        
+
         RcLoader::parse_config_content(content, &mut config);
-        
+
         assert!(config.show_line_numbers);
         assert!(config.expand_tab);
         assert_eq!(config.tab_stop, 8);
@@ -240,9 +250,9 @@ mod tests {
             show_whitespace=false
             line_ending=mac
         "#;
-        
+
         RcLoader::parse_config_content(content, &mut config);
-        
+
         assert!(config.show_line_numbers);
         assert!(config.expand_tab);
         assert_eq!(config.tab_stop, 2);
@@ -262,9 +272,9 @@ mod tests {
             # set expandtab        # This is commented out
             set nolist             # Disable whitespace display
         "#;
-        
+
         RcLoader::parse_config_content(content, &mut config);
-        
+
         assert!(config.show_line_numbers);
         assert!(!config.expand_tab); // Should remain false (default)
         assert_eq!(config.tab_stop, 6);
@@ -281,9 +291,9 @@ mod tests {
             line_ending=invalid    # Invalid: unknown format
             unknown_setting=value  # Unknown setting
         "#;
-        
+
         RcLoader::parse_config_content(content, &mut config);
-        
+
         // Should remain at defaults since all values are invalid
         assert_eq!(config.tab_stop, 4);
         assert_eq!(config.line_ending, "unix");

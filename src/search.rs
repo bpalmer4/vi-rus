@@ -42,7 +42,11 @@ impl SearchState {
         }
     }
 
-    pub fn set_pattern(&mut self, pattern: String, direction: SearchDirection) -> Result<(), SearchError> {
+    pub fn set_pattern(
+        &mut self,
+        pattern: String,
+        direction: SearchDirection,
+    ) -> Result<(), SearchError> {
         let is_empty = pattern.is_empty();
         self.direction = direction;
 
@@ -60,7 +64,7 @@ impl SearchState {
         } else {
             Regex::new(&format!("(?i){pattern}"))
         };
-        
+
         // Set pattern after we've used it
         self.pattern = pattern;
 
@@ -166,7 +170,7 @@ impl SearchState {
         if self.wrap_search && !self.matches.is_empty() {
             let wrapped_pos = match self.direction {
                 SearchDirection::Forward => self.matches.len() - 1, // Wrap to last match
-                SearchDirection::Backward => 0, // Wrap to first match
+                SearchDirection::Backward => 0,                     // Wrap to first match
             };
             self.current_match = Some(wrapped_pos);
             return self.matches.get(wrapped_pos);
@@ -175,16 +179,23 @@ impl SearchState {
         None
     }
 
-    pub fn repeat_last_search(&mut self, from_line: usize, from_col: usize) -> Option<&SearchMatch> {
+    pub fn repeat_last_search(
+        &mut self,
+        from_line: usize,
+        from_col: usize,
+    ) -> Option<&SearchMatch> {
         // Continue in the same direction as the original search
         self.find_next_match(from_line, from_col)
     }
 
-    pub fn repeat_last_search_reverse(&mut self, from_line: usize, from_col: usize) -> Option<&SearchMatch> {
+    pub fn repeat_last_search_reverse(
+        &mut self,
+        from_line: usize,
+        from_col: usize,
+    ) -> Option<&SearchMatch> {
         // Continue in the opposite direction of the original search
         self.find_prev_match(from_line, from_col)
     }
-
 
     pub fn current_match_index(&self) -> Option<usize> {
         self.current_match.map(|idx| idx + 1) // 1-based for display
@@ -233,7 +244,11 @@ impl SearchReplace {
         let original_matches = regex.find_iter(line).count();
         let replacements = if global {
             original_matches
-        } else if original_matches > 0 { 1 } else { 0 };
+        } else if original_matches > 0 {
+            1
+        } else {
+            0
+        };
 
         Ok((result, replacements))
     }
@@ -252,13 +267,8 @@ impl SearchReplace {
 
         for line_idx in start_line..=actual_end_line {
             if let Some(line) = document.lines.get_mut(line_idx) {
-                let (new_line, replacements) = Self::substitute_line(
-                    line,
-                    pattern,
-                    replacement,
-                    global,
-                    case_sensitive,
-                )?;
+                let (new_line, replacements) =
+                    Self::substitute_line(line, pattern, replacement, global, case_sensitive)?;
 
                 if replacements > 0 {
                     *line = new_line;
@@ -283,7 +293,7 @@ impl SearchReplace {
         if document.lines.is_empty() {
             return Ok(0);
         }
-        
+
         Self::substitute_document(
             document,
             0,
@@ -303,7 +313,11 @@ mod tests {
     #[test]
     fn test_search_state_basic() {
         let mut search = SearchState::new();
-        assert!(search.set_pattern("test".to_string(), SearchDirection::Forward).is_ok());
+        assert!(
+            search
+                .set_pattern("test".to_string(), SearchDirection::Forward)
+                .is_ok()
+        );
         assert_eq!(search.pattern, "test");
         assert_eq!(search.direction, SearchDirection::Forward);
     }

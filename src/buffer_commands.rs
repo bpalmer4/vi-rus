@@ -44,11 +44,12 @@ impl Controller {
     pub fn handle_close_buffer_command(&mut self) {
         // Get the filename of the buffer being closed before closing it
         let closing_filename = self.current_document().filename.clone();
-        
+
         match self.buffer_manager.close_buffer() {
             Ok(msg) => {
                 // Clean up marks associated with the closed buffer
-                self.mark_manager.cleanup_for_closed_buffer(closing_filename.as_ref());
+                self.mark_manager
+                    .cleanup_for_closed_buffer(closing_filename.as_ref());
                 self.status_message = msg;
             }
             Err(msg) => self.status_message = msg,
@@ -58,11 +59,12 @@ impl Controller {
     pub fn handle_force_close_buffer_command(&mut self) {
         // Get the filename of the buffer being closed before closing it
         let closing_filename = self.current_document().filename.clone();
-        
+
         match self.buffer_manager.force_close_buffer() {
             Ok(msg) => {
                 // Clean up marks associated with the closed buffer
-                self.mark_manager.cleanup_for_closed_buffer(closing_filename.as_ref());
+                self.mark_manager
+                    .cleanup_for_closed_buffer(closing_filename.as_ref());
                 self.status_message = msg;
             }
             Err(msg) => self.status_message = msg,

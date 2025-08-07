@@ -4,7 +4,6 @@ use crossterm::event::{KeyCode, KeyModifiers};
 pub struct KeyHandler;
 
 impl KeyHandler {
-
     pub fn parse_key_with_state(
         mode: &Mode,
         key_event: &crossterm::event::KeyEvent,
@@ -16,9 +15,13 @@ impl KeyHandler {
         let modifiers = key_event.modifiers;
 
         match mode {
-            Mode::Normal => {
-                Self::parse_normal_mode_with_state(key, modifiers, pending_key, number_prefix, pending_register)
-            }
+            Mode::Normal => Self::parse_normal_mode_with_state(
+                key,
+                modifiers,
+                pending_key,
+                number_prefix,
+                pending_register,
+            ),
             Mode::Insert => Self::parse_insert_mode_key(key),
             Mode::Command => Self::parse_command_mode_key(key),
             Mode::Search | Mode::SearchBackward => None, // Search mode input is handled directly in controller
@@ -43,9 +46,7 @@ impl KeyHandler {
             KeyCode::Char('u') if modifiers.contains(KeyModifiers::CONTROL) => {
                 Some(Command::MoveHalfPageUp)
             }
-            KeyCode::Char('r') if modifiers.contains(KeyModifiers::CONTROL) => {
-                Some(Command::Redo)
-            }
+            KeyCode::Char('r') if modifiers.contains(KeyModifiers::CONTROL) => Some(Command::Redo),
             KeyCode::Char('l') if modifiers.contains(KeyModifiers::CONTROL) => {
                 Some(Command::Redraw)
             }
@@ -92,7 +93,7 @@ impl KeyHandler {
             // Document movement
             KeyCode::Char('g') => None, // gg and other g commands handled in stateful parser
             KeyCode::Char('G') => Some(Command::MoveDocumentEnd),
-            
+
             // Screen positioning
             KeyCode::Char('H') => Some(Command::MoveToScreenTop),
             KeyCode::Char('M') => Some(Command::MoveToScreenMiddle),
@@ -116,11 +117,11 @@ impl KeyHandler {
             KeyCode::Char('S') => Some(Command::SubstituteLine),
             KeyCode::Char('J') => Some(Command::JoinLines),
             KeyCode::Char('~') => Some(Command::ToggleCase),
-            
+
             // Change commands
             KeyCode::Char('c') => None, // Handled in stateful parser for cc, cw, etc.
             KeyCode::Char('C') => Some(Command::ChangeToEndOfLine),
-            
+
             // Visual mode
             KeyCode::Char('v') => Some(Command::EnterVisualChar),
             KeyCode::Char('V') => Some(Command::EnterVisualLine),
@@ -129,8 +130,14 @@ impl KeyHandler {
             KeyCode::Char('y') => None, // Handled in stateful parser for yy, yw, etc.
 
             // Paste commands
-            KeyCode::Char('p') => Some(Command::Paste(crate::yank_paste_handler::PasteType::After, None)),
-            KeyCode::Char('P') => Some(Command::Paste(crate::yank_paste_handler::PasteType::Before, None)),
+            KeyCode::Char('p') => Some(Command::Paste(
+                crate::yank_paste_handler::PasteType::After,
+                None,
+            )),
+            KeyCode::Char('P') => Some(Command::Paste(
+                crate::yank_paste_handler::PasteType::Before,
+                None,
+            )),
 
             // Indentation (handled in new stateful parser)
             KeyCode::Char('>') => None,
@@ -162,6 +169,11 @@ impl KeyHandler {
             KeyCode::Tab => Some(Command::InsertTab),
             KeyCode::Backspace => Some(Command::DeleteChar),
             KeyCode::Char(c) => Some(Command::InsertChar(c)),
+            // Add arrow key support for insert mode
+            KeyCode::Left => Some(Command::MoveLeft),
+            KeyCode::Right => Some(Command::MoveRight),
+            KeyCode::Up => Some(Command::MoveUp),
+            KeyCode::Down => Some(Command::MoveDown),
             _ => None,
         }
     }
@@ -185,7 +197,7 @@ impl KeyHandler {
             KeyCode::Char(c) if pending_key.is_some() => {
                 let pending = pending_key.take().unwrap();
                 let count = number_prefix.take().unwrap_or(1);
-                
+
                 // Handle register sequences first
                 if pending == '"' && (c.is_ascii_alphabetic() || c.is_ascii_digit()) {
                     *pending_register = Some(c);
@@ -243,60 +255,96 @@ impl KeyHandler {
                     ('@', target_char) => Some(Command::DeleteUntilCharBackward(target_char)),
                     ('#', target_char) => Some(Command::DeleteFindChar(target_char)),
                     ('%', target_char) => Some(Command::DeleteFindCharBackward(target_char)),
-                    
+
                     // Yank (copy) commands
                     ('y', 'y') => {
                         let register = pending_register.take();
                         Some(if count == 1 {
                             Command::Yank(crate::yank_paste_handler::YankType::Line, register)
                         } else {
-                            Command::Yank(crate::yank_paste_handler::YankType::Lines(count), register)
+                            Command::Yank(
+                                crate::yank_paste_handler::YankType::Lines(count),
+                                register,
+                            )
                         })
-                    },
+                    }
                     ('y', 'w') => {
                         let register = pending_register.take();
-                        Some(Command::Yank(crate::yank_paste_handler::YankType::Word, register))
-                    },
+                        Some(Command::Yank(
+                            crate::yank_paste_handler::YankType::Word,
+                            register,
+                        ))
+                    }
                     ('y', 'W') => {
                         let register = pending_register.take();
-                        Some(Command::Yank(crate::yank_paste_handler::YankType::BigWord, register))
-                    },
+                        Some(Command::Yank(
+                            crate::yank_paste_handler::YankType::BigWord,
+                            register,
+                        ))
+                    }
                     ('y', 'b') => {
                         let register = pending_register.take();
-                        Some(Command::Yank(crate::yank_paste_handler::YankType::WordBackward, register))
-                    },
+                        Some(Command::Yank(
+                            crate::yank_paste_handler::YankType::WordBackward,
+                            register,
+                        ))
+                    }
                     ('y', 'B') => {
                         let register = pending_register.take();
-                        Some(Command::Yank(crate::yank_paste_handler::YankType::BigWordBackward, register))
-                    },
+                        Some(Command::Yank(
+                            crate::yank_paste_handler::YankType::BigWordBackward,
+                            register,
+                        ))
+                    }
                     ('y', 'e') => {
                         let register = pending_register.take();
-                        Some(Command::Yank(crate::yank_paste_handler::YankType::ToEndOfWord, register))
-                    },
+                        Some(Command::Yank(
+                            crate::yank_paste_handler::YankType::ToEndOfWord,
+                            register,
+                        ))
+                    }
                     ('y', 'E') => {
                         let register = pending_register.take();
-                        Some(Command::Yank(crate::yank_paste_handler::YankType::ToEndOfBigWord, register))
-                    },
+                        Some(Command::Yank(
+                            crate::yank_paste_handler::YankType::ToEndOfBigWord,
+                            register,
+                        ))
+                    }
                     ('y', '0') => {
                         let register = pending_register.take();
-                        Some(Command::Yank(crate::yank_paste_handler::YankType::ToStartOfLine, register))
-                    },
+                        Some(Command::Yank(
+                            crate::yank_paste_handler::YankType::ToStartOfLine,
+                            register,
+                        ))
+                    }
                     ('y', '$') => {
                         let register = pending_register.take();
-                        Some(Command::Yank(crate::yank_paste_handler::YankType::ToEndOfLine, register))
-                    },
+                        Some(Command::Yank(
+                            crate::yank_paste_handler::YankType::ToEndOfLine,
+                            register,
+                        ))
+                    }
                     ('y', '^') => {
                         let register = pending_register.take();
-                        Some(Command::Yank(crate::yank_paste_handler::YankType::ToFirstNonWhitespace, register))
-                    },
+                        Some(Command::Yank(
+                            crate::yank_paste_handler::YankType::ToFirstNonWhitespace,
+                            register,
+                        ))
+                    }
                     ('y', 'G') => {
                         let register = pending_register.take();
-                        Some(Command::Yank(crate::yank_paste_handler::YankType::ToEndOfFile, register))
-                    },
+                        Some(Command::Yank(
+                            crate::yank_paste_handler::YankType::ToEndOfFile,
+                            register,
+                        ))
+                    }
                     ('y', 'g') => {
                         let register = pending_register.take();
-                        Some(Command::Yank(crate::yank_paste_handler::YankType::ToStartOfFile, register))
-                    }, // ygg -> yank to start
+                        Some(Command::Yank(
+                            crate::yank_paste_handler::YankType::ToStartOfFile,
+                            register,
+                        ))
+                    } // ygg -> yank to start
                     ('y', 't') => {
                         // For yt{char} - wait for target character
                         *pending_key = Some('&'); // Use '&' to indicate yank-until-char mode
@@ -319,21 +367,33 @@ impl KeyHandler {
                     }
                     ('&', target_char) => {
                         let register = pending_register.take();
-                        Some(Command::Yank(crate::yank_paste_handler::YankType::UntilChar(target_char), register))
-                    },
+                        Some(Command::Yank(
+                            crate::yank_paste_handler::YankType::UntilChar(target_char),
+                            register,
+                        ))
+                    }
                     ('*', target_char) => {
                         let register = pending_register.take();
-                        Some(Command::Yank(crate::yank_paste_handler::YankType::UntilCharBackward(target_char), register))
-                    },
+                        Some(Command::Yank(
+                            crate::yank_paste_handler::YankType::UntilCharBackward(target_char),
+                            register,
+                        ))
+                    }
                     ('(', target_char) => {
                         let register = pending_register.take();
-                        Some(Command::Yank(crate::yank_paste_handler::YankType::FindChar(target_char), register))
-                    },
+                        Some(Command::Yank(
+                            crate::yank_paste_handler::YankType::FindChar(target_char),
+                            register,
+                        ))
+                    }
                     (')', target_char) => {
                         let register = pending_register.take();
-                        Some(Command::Yank(crate::yank_paste_handler::YankType::FindCharBackward(target_char), register))
-                    },
-                    
+                        Some(Command::Yank(
+                            crate::yank_paste_handler::YankType::FindCharBackward(target_char),
+                            register,
+                        ))
+                    }
+
                     // Change (delete + insert mode) commands
                     ('c', 'c') => Some(if count == 1 {
                         Command::ChangeLine
@@ -378,10 +438,20 @@ impl KeyHandler {
                     ('m', mark_char) if mark_char.is_ascii_alphabetic() => {
                         Some(Command::SetMark(mark_char))
                     }
-                    ('\'', mark_char) if mark_char.is_ascii_alphabetic() || mark_char == '\'' || mark_char == '.' || mark_char == '^' => {
+                    ('\'', mark_char)
+                        if mark_char.is_ascii_alphabetic()
+                            || mark_char == '\''
+                            || mark_char == '.'
+                            || mark_char == '^' =>
+                    {
                         Some(Command::JumpToMarkLine(mark_char))
                     }
-                    ('`', mark_char) if mark_char.is_ascii_alphabetic() || mark_char == '`' || mark_char == '.' || mark_char == '^' => {
+                    ('`', mark_char)
+                        if mark_char.is_ascii_alphabetic()
+                            || mark_char == '`'
+                            || mark_char == '.'
+                            || mark_char == '^' =>
+                    {
                         Some(Command::JumpToMark(mark_char))
                     }
                     // Handle 'g' commands: gg for goto line 1, gu for lowercase, gU for uppercase
@@ -443,15 +513,21 @@ impl KeyHandler {
             _ => {
                 // Check if there's a pending register for this command
                 let register_char = pending_register.take();
-                
+
                 // Clear any pending state for non-multi-key commands
                 *pending_key = None;
                 let _count = number_prefix.take();
 
                 // Handle register-aware commands
                 match (key, register_char) {
-                    (KeyCode::Char('p'), Some(reg)) => Some(Command::Paste(crate::yank_paste_handler::PasteType::After, Some(reg))),
-                    (KeyCode::Char('P'), Some(reg)) => Some(Command::Paste(crate::yank_paste_handler::PasteType::Before, Some(reg))),
+                    (KeyCode::Char('p'), Some(reg)) => Some(Command::Paste(
+                        crate::yank_paste_handler::PasteType::After,
+                        Some(reg),
+                    )),
+                    (KeyCode::Char('P'), Some(reg)) => Some(Command::Paste(
+                        crate::yank_paste_handler::PasteType::Before,
+                        Some(reg),
+                    )),
                     (KeyCode::Char('y'), Some(_reg)) => {
                         // Store the register for the yank command sequence
                         *pending_register = register_char;
@@ -480,20 +556,20 @@ impl KeyHandler {
         match key {
             // Exit visual mode
             KeyCode::Esc => Some(Command::ExitVisualMode),
-            
+
             // Visual mode operations
             KeyCode::Char('d') => Some(Command::VisualDelete),
             KeyCode::Char('x') => Some(Command::VisualDelete),
             KeyCode::Char('y') => Some(Command::VisualYank),
             KeyCode::Char('>') => Some(Command::VisualIndent),
             KeyCode::Char('<') => Some(Command::VisualDedent),
-            
+
             // Movement in visual mode (same as normal mode)
             KeyCode::Char('h') | KeyCode::Left => Some(Command::MoveLeft),
             KeyCode::Char('j') | KeyCode::Down => Some(Command::MoveDown),
             KeyCode::Char('k') | KeyCode::Up => Some(Command::MoveUp),
             KeyCode::Char('l') | KeyCode::Right => Some(Command::MoveRight),
-            
+
             // Word movement
             KeyCode::Char('w') => Some(Command::MoveWordForward),
             KeyCode::Char('b') => Some(Command::MoveWordBackward),
@@ -501,7 +577,7 @@ impl KeyHandler {
             KeyCode::Char('W') => Some(Command::MoveBigWordForward),
             KeyCode::Char('B') => Some(Command::MoveBigWordBackward),
             KeyCode::Char('E') => Some(Command::MoveBigWordEnd),
-            
+
             // Line movement
             KeyCode::Char('0') => Some(Command::MoveLineStart),
             KeyCode::Char('$') => Some(Command::MoveLineEnd),
@@ -509,32 +585,38 @@ impl KeyHandler {
             KeyCode::Char('+') => Some(Command::MoveDownToFirstNonWhitespace),
             KeyCode::Char('-') => Some(Command::MoveUpToFirstNonWhitespace),
             KeyCode::Enter => Some(Command::MoveDownToFirstNonWhitespace),
-            
+
             // Document movement (only if not already handled above)
             KeyCode::Char('g') => Some(Command::MoveDocumentStart),
             KeyCode::Char('G') => Some(Command::MoveDocumentEnd),
-            
+
             // Screen positioning
             KeyCode::Char('H') => Some(Command::MoveToScreenTop),
             KeyCode::Char('M') => Some(Command::MoveToScreenMiddle),
             KeyCode::Char('L') => Some(Command::MoveToScreenBottom),
             KeyCode::PageDown => Some(Command::MovePageDown),
             KeyCode::PageUp => Some(Command::MovePageUp),
-            KeyCode::Char('f') if modifiers.contains(KeyModifiers::CONTROL) => Some(Command::MovePageDown),
-            KeyCode::Char('u') if modifiers.contains(KeyModifiers::CONTROL) => Some(Command::MoveHalfPageUp),
-            
+            KeyCode::Char('f') if modifiers.contains(KeyModifiers::CONTROL) => {
+                Some(Command::MovePageDown)
+            }
+            KeyCode::Char('u') if modifiers.contains(KeyModifiers::CONTROL) => {
+                Some(Command::MoveHalfPageUp)
+            }
+
             // Word search
             KeyCode::Char('*') => Some(Command::SearchWordUnderCursor),
             KeyCode::Char('#') => Some(Command::SearchWordUnderCursorBackward),
-            
+
             // Bracket matching
             KeyCode::Char('%') => Some(Command::MatchBracket),
-            
+
             // Switch visual modes (Ctrl+v must come first to avoid conflict)
-            KeyCode::Char('v') if modifiers.contains(KeyModifiers::CONTROL) => Some(Command::EnterVisualBlock),
+            KeyCode::Char('v') if modifiers.contains(KeyModifiers::CONTROL) => {
+                Some(Command::EnterVisualBlock)
+            }
             KeyCode::Char('v') => Some(Command::EnterVisualChar),
             KeyCode::Char('V') => Some(Command::EnterVisualLine),
-            
+
             _ => None,
         }
     }

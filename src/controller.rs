@@ -2,14 +2,14 @@ use crate::buffer_manager::BufferManager;
 use crate::key_handler::KeyHandler;
 use crate::marks::MarkManager;
 use crate::registers::RegisterManager;
-use crate::search::{SearchState, SearchDirection};
+use crate::search::{SearchDirection, SearchState};
 use crate::undo::{UndoAction, UndoGroup};
-use crate::view::{View, RenderParams};
+use crate::view::{RenderParams, View};
 use crate::visual_mode::{Selection, VisualMode, VisualModeHandler};
 use crossterm::{
     event::{self, Event, KeyCode},
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
     execute,
+    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use std::io::stdout;
 
@@ -46,12 +46,12 @@ pub enum Command {
     // Line jumping
     #[allow(dead_code)] // Will be wired up in key handler
     MoveToLine(usize),
-    
+
     // Screen positioning
     MoveToScreenTop,    // H
     MoveToScreenMiddle, // M
     MoveToScreenBottom, // L
-    
+
     // Bracket matching
     MatchBracket, // %
 
@@ -127,7 +127,7 @@ pub enum Command {
     DeleteUntilCharBackward(char),
     DeleteFindChar(char),
     DeleteFindCharBackward(char),
-    
+
     // Change commands (delete + enter insert mode)
     ChangeLine,
     ChangeLines(usize),
@@ -146,11 +146,11 @@ pub enum Command {
     ChangeUntilCharBackward(char),
     ChangeFindChar(char),
     ChangeFindCharBackward(char),
-    
+
     // Yank and paste commands (simplified)
     Yank(crate::yank_paste_handler::YankType, Option<char>),
     Paste(crate::yank_paste_handler::PasteType, Option<char>),
-    
+
     // Visual mode commands
     EnterVisualChar,
     EnterVisualLine,
@@ -160,18 +160,18 @@ pub enum Command {
     VisualIndent,
     VisualDedent,
     VisualYank,
-    
+
     ExitInsertMode,
     Redraw,
-    
+
     // Line operations
     JoinLines,
-    
+
     // Case operations
     ToggleCase,
     Lowercase,
     Uppercase,
-    
+
     // Undo/Redo commands
     Undo,
     Redo,
@@ -205,6 +205,8 @@ pub struct Controller {
     pub search_state: SearchState,
     pub mark_manager: MarkManager,
     pub register_manager: RegisterManager,
+    pub show_all_unmatched: bool,
+    pub cached_unmatched_brackets: Option<Vec<(usize, usize)>>,
 }
 
 impl Controller {
@@ -225,9 +227,10 @@ impl Controller {
             search_state: SearchState::new(),
             mark_manager: MarkManager::new(),
             register_manager: RegisterManager::new(),
+            show_all_unmatched: false,
+            cached_unmatched_brackets: None,
         }
     }
-
 
     pub fn new_with_files(filenames: Vec<std::path::PathBuf>) -> Result<Self, std::io::Error> {
         Ok(Self {
@@ -246,6 +249,8 @@ impl Controller {
             search_state: SearchState::new(),
             mark_manager: MarkManager::new(),
             register_manager: RegisterManager::new(),
+            show_all_unmatched: false,
+            cached_unmatched_brackets: None,
         })
     }
 
@@ -271,114 +276,189 @@ impl Controller {
     fn execute_command(&mut self, command: Command) -> bool {
         match command {
             // Movement commands
-            Command::MoveUp | Command::MoveDown | Command::MoveLeft | Command::MoveRight |
-            Command::MoveWordForward | Command::MoveWordBackward | Command::MoveWordEnd |
-            Command::MoveBigWordForward | Command::MoveBigWordBackward | Command::MoveBigWordEnd |
-            Command::MoveLineStart | Command::MoveLineEnd | Command::MoveFirstNonWhitespace |
-            Command::MoveDownToFirstNonWhitespace | Command::MoveUpToFirstNonWhitespace |
-            Command::MoveDocumentStart | Command::MoveDocumentEnd | Command::MovePageUp |
-            Command::MovePageDown | Command::MoveHalfPageUp | Command::MoveHalfPageDown |
-            Command::MoveToLine(_) | Command::MoveToScreenTop | Command::MoveToScreenMiddle | 
-            Command::MoveToScreenBottom | Command::MatchBracket => {
+            Command::MoveUp
+            | Command::MoveDown
+            | Command::MoveLeft
+            | Command::MoveRight
+            | Command::MoveWordForward
+            | Command::MoveWordBackward
+            | Command::MoveWordEnd
+            | Command::MoveBigWordForward
+            | Command::MoveBigWordBackward
+            | Command::MoveBigWordEnd
+            | Command::MoveLineStart
+            | Command::MoveLineEnd
+            | Command::MoveFirstNonWhitespace
+            | Command::MoveDownToFirstNonWhitespace
+            | Command::MoveUpToFirstNonWhitespace
+            | Command::MoveDocumentStart
+            | Command::MoveDocumentEnd
+            | Command::MovePageUp
+            | Command::MovePageDown
+            | Command::MoveHalfPageUp
+            | Command::MoveHalfPageDown
+            | Command::MoveToLine(_)
+            | Command::MoveToScreenTop
+            | Command::MoveToScreenMiddle
+            | Command::MoveToScreenBottom
+            | Command::MatchBracket => {
                 self.execute_movement_command(command);
                 false
             }
-            
+
             // Character search commands
-            Command::FindChar(_) | Command::FindCharBackward(_) | Command::FindCharBefore(_) |
-            Command::FindCharBeforeBackward(_) | Command::RepeatFind | Command::RepeatFindReverse => {
+            Command::FindChar(_)
+            | Command::FindCharBackward(_)
+            | Command::FindCharBefore(_)
+            | Command::FindCharBeforeBackward(_)
+            | Command::RepeatFind
+            | Command::RepeatFindReverse => {
                 self.execute_character_search_command(command);
                 false
             }
-            
+
             // Mark commands
-            Command::SetMark(_) | Command::JumpToMark(_) | Command::JumpToMarkLine(_) |
-            Command::JumpBackward | Command::JumpForward => {
+            Command::SetMark(_)
+            | Command::JumpToMark(_)
+            | Command::JumpToMarkLine(_)
+            | Command::JumpBackward
+            | Command::JumpForward => {
                 self.execute_mark_command(command);
                 false
             }
-            
+
             // Search commands
-            Command::EnterSearchMode | Command::EnterSearchBackwardMode | Command::SearchForward(_) | Command::SearchBackward(_) |
-            Command::SearchNext | Command::SearchPrevious | Command::ExitSearchMode | 
-            Command::SearchWordUnderCursor | Command::SearchWordUnderCursorBackward => {
+            Command::EnterSearchMode
+            | Command::EnterSearchBackwardMode
+            | Command::SearchForward(_)
+            | Command::SearchBackward(_)
+            | Command::SearchNext
+            | Command::SearchPrevious
+            | Command::ExitSearchMode
+            | Command::SearchWordUnderCursor
+            | Command::SearchWordUnderCursorBackward => {
                 self.execute_search_command(command);
                 false
             }
-            
+
             // Insert mode commands
-            Command::EnterInsertMode | Command::EnterInsertModeAfter | Command::EnterInsertModeNewLine |
-            Command::EnterInsertModeNewLineAbove | Command::EnterInsertModeLineEnd | Command::EnterInsertModeLineStart |
-            Command::ExitInsertMode | Command::InsertChar(_) | Command::InsertNewline | Command::InsertTab => {
+            Command::EnterInsertMode
+            | Command::EnterInsertModeAfter
+            | Command::EnterInsertModeNewLine
+            | Command::EnterInsertModeNewLineAbove
+            | Command::EnterInsertModeLineEnd
+            | Command::EnterInsertModeLineStart
+            | Command::ExitInsertMode
+            | Command::InsertChar(_)
+            | Command::InsertNewline
+            | Command::InsertTab => {
                 self.execute_insert_command(command);
                 false
             }
-            
+
             // Edit commands
-            Command::DeleteChar | Command::DeleteCharForward | Command::DeleteCharBackward | Command::DeleteLine | Command::DeleteLines(_) |
-            Command::DeleteToEndOfLine | Command::DeleteWord | Command::DeleteBigWord | Command::DeleteWordBackward |
-            Command::DeleteBigWordBackward | Command::DeleteToEndOfWord | Command::DeleteToEndOfBigWord |
-            Command::DeleteToStartOfLine | Command::DeleteToFirstNonWhitespace | Command::DeleteToEndOfFile |
-            Command::DeleteToStartOfFile | Command::SubstituteChar | Command::SubstituteLine |
-            Command::DeleteUntilChar(_) | Command::DeleteUntilCharBackward(_) | Command::DeleteFindChar(_) |
-            Command::DeleteFindCharBackward(_) => {
+            Command::DeleteChar
+            | Command::DeleteCharForward
+            | Command::DeleteCharBackward
+            | Command::DeleteLine
+            | Command::DeleteLines(_)
+            | Command::DeleteToEndOfLine
+            | Command::DeleteWord
+            | Command::DeleteBigWord
+            | Command::DeleteWordBackward
+            | Command::DeleteBigWordBackward
+            | Command::DeleteToEndOfWord
+            | Command::DeleteToEndOfBigWord
+            | Command::DeleteToStartOfLine
+            | Command::DeleteToFirstNonWhitespace
+            | Command::DeleteToEndOfFile
+            | Command::DeleteToStartOfFile
+            | Command::SubstituteChar
+            | Command::SubstituteLine
+            | Command::DeleteUntilChar(_)
+            | Command::DeleteUntilCharBackward(_)
+            | Command::DeleteFindChar(_)
+            | Command::DeleteFindCharBackward(_) => {
                 self.execute_edit_command(command);
                 false
             }
-            
+
             // Change commands (delete + enter insert mode)
-            Command::ChangeLine | Command::ChangeLines(_) | Command::ChangeToEndOfLine |
-            Command::ChangeWord | Command::ChangeBigWord | Command::ChangeWordBackward | Command::ChangeBigWordBackward |
-            Command::ChangeToEndOfWord | Command::ChangeToEndOfBigWord | Command::ChangeToStartOfLine |
-            Command::ChangeToFirstNonWhitespace | Command::ChangeToEndOfFile | Command::ChangeToStartOfFile |
-            Command::ChangeUntilChar(_) | Command::ChangeUntilCharBackward(_) | Command::ChangeFindChar(_) |
-            Command::ChangeFindCharBackward(_) => {
+            Command::ChangeLine
+            | Command::ChangeLines(_)
+            | Command::ChangeToEndOfLine
+            | Command::ChangeWord
+            | Command::ChangeBigWord
+            | Command::ChangeWordBackward
+            | Command::ChangeBigWordBackward
+            | Command::ChangeToEndOfWord
+            | Command::ChangeToEndOfBigWord
+            | Command::ChangeToStartOfLine
+            | Command::ChangeToFirstNonWhitespace
+            | Command::ChangeToEndOfFile
+            | Command::ChangeToStartOfFile
+            | Command::ChangeUntilChar(_)
+            | Command::ChangeUntilCharBackward(_)
+            | Command::ChangeFindChar(_)
+            | Command::ChangeFindCharBackward(_) => {
                 self.execute_change_command(command);
                 false
             }
-            
+
             // Yank and paste commands
             Command::Yank(yank_type, register) => {
-                crate::yank_paste_handler::YankPasteHandler::execute_yank(self, yank_type, register);
+                crate::yank_paste_handler::YankPasteHandler::execute_yank(
+                    self, yank_type, register,
+                );
                 false
             }
             Command::Paste(paste_type, register) => {
-                crate::yank_paste_handler::YankPasteHandler::execute_paste(self, paste_type, register);
+                crate::yank_paste_handler::YankPasteHandler::execute_paste(
+                    self, paste_type, register,
+                );
                 false
             }
-            
+
             // Visual mode commands
-            Command::EnterVisualChar | Command::EnterVisualLine | Command::EnterVisualBlock |
-            Command::ExitVisualMode | Command::VisualDelete | Command::VisualIndent | Command::VisualDedent |
-            Command::VisualYank => {
+            Command::EnterVisualChar
+            | Command::EnterVisualLine
+            | Command::EnterVisualBlock
+            | Command::ExitVisualMode
+            | Command::VisualDelete
+            | Command::VisualIndent
+            | Command::VisualDedent
+            | Command::VisualYank => {
                 self.execute_visual_command(command);
                 false
             }
-            
+
             // Indentation commands
-            Command::IndentLine | Command::IndentLines(_) | Command::DedentLine | Command::DedentLines(_) => {
+            Command::IndentLine
+            | Command::IndentLines(_)
+            | Command::DedentLine
+            | Command::DedentLines(_) => {
                 self.execute_indentation_command(command);
                 false
             }
-            
+
             // Line operations
             Command::JoinLines => {
                 self.execute_join_lines_command();
                 false
             }
-            
+
             // Case operations
             Command::ToggleCase | Command::Lowercase | Command::Uppercase => {
                 self.execute_case_command(command);
                 false
             }
-            
+
             // Undo/Redo commands
             Command::Undo | Command::Redo => {
                 self.execute_undo_redo_command(command);
                 false
             }
-            
+
             // Command mode and other commands
             Command::EnterCommandMode | Command::Execute(_) | Command::Redraw => {
                 self.execute_other_command(command)
@@ -458,7 +538,7 @@ impl Controller {
             Command::MovePageDown => self.current_document_mut().move_page_down(),
             Command::MoveHalfPageUp => self.current_document_mut().move_half_page_up(),
             Command::MoveHalfPageDown => self.current_document_mut().move_half_page_down(),
-            
+
             // Screen positioning
             Command::MoveToScreenTop => self.move_to_screen_top(),
             Command::MoveToScreenMiddle => self.move_to_screen_middle(),
@@ -466,10 +546,10 @@ impl Controller {
 
             // Line jumping
             Command::MoveToLine(line) => self.current_document_mut().move_to_line(line),
-            
+
             // Bracket matching
             Command::MatchBracket => self.match_bracket(),
-            
+
             _ => {} // Should not reach here
         }
     }
@@ -526,20 +606,36 @@ impl Controller {
                 let line = doc.cursor_line;
                 let column = doc.cursor_column;
                 let filename = doc.filename.clone();
-                
+
                 if mark_char.is_ascii_lowercase() {
                     // Local mark - set on current document
-                    if let Err(err) = self.current_document_mut().set_local_mark(mark_char, line, column) {
+                    if let Err(err) = self
+                        .current_document_mut()
+                        .set_local_mark(mark_char, line, column)
+                    {
                         self.status_message = err;
                     } else {
-                        self.status_message = format!("Mark '{}' set at line {}, column {}", mark_char, line + 1, column + 1);
+                        self.status_message = format!(
+                            "Mark '{}' set at line {}, column {}",
+                            mark_char,
+                            line + 1,
+                            column + 1
+                        );
                     }
                 } else if mark_char.is_ascii_uppercase() {
                     // Global mark - set on mark manager
-                    if let Err(err) = self.mark_manager.set_global_mark(mark_char, line, column, filename) {
+                    if let Err(err) = self
+                        .mark_manager
+                        .set_global_mark(mark_char, line, column, filename)
+                    {
                         self.status_message = err;
                     } else {
-                        self.status_message = format!("Mark '{}' set at line {}, column {}", mark_char, line + 1, column + 1);
+                        self.status_message = format!(
+                            "Mark '{}' set at line {}, column {}",
+                            mark_char,
+                            line + 1,
+                            column + 1
+                        );
                     }
                 } else {
                     self.status_message = format!("Invalid mark character: {mark_char}");
@@ -548,26 +644,35 @@ impl Controller {
             Command::JumpToMark(mark_char) => {
                 if mark_char.is_ascii_lowercase() {
                     // Local mark - check current document
-                    if let Some((line, column)) = self.current_document().get_local_mark(mark_char) {
+                    if let Some((line, column)) = self.current_document().get_local_mark(mark_char)
+                    {
                         // Get current position before borrowing mutably
                         let (current_line, current_col, current_filename) = {
                             let doc = self.current_document();
                             (doc.cursor_line, doc.cursor_column, doc.filename.clone())
                         };
-                        
+
                         // Add current position to jump list before jumping
-                        self.mark_manager.add_to_jump_list(current_line, current_col, current_filename);
-                        
+                        self.mark_manager.add_to_jump_list(
+                            current_line,
+                            current_col,
+                            current_filename,
+                        );
+
                         // Update last jump position
                         self.mark_manager.set_last_jump(current_line, current_col);
-                        
+
                         // Jump to mark (exact position)
                         let doc_mut = self.current_document_mut();
                         doc_mut.cursor_line = line;
                         doc_mut.cursor_column = column;
-                        
-                        self.status_message = format!("Jumped to mark '{}' at line {}, column {}", 
-                            mark_char, line + 1, column + 1);
+
+                        self.status_message = format!(
+                            "Jumped to mark '{}' at line {}, column {}",
+                            mark_char,
+                            line + 1,
+                            column + 1
+                        );
                     } else {
                         self.status_message = format!("Mark '{mark_char}' not set");
                     }
@@ -579,35 +684,45 @@ impl Controller {
                             let doc = self.current_document();
                             (doc.cursor_line, doc.cursor_column, doc.filename.clone())
                         };
-                        
+
                         // Add current position to jump list before jumping
-                        self.mark_manager.add_to_jump_list(current_line, current_col, current_filename);
-                        
+                        self.mark_manager.add_to_jump_list(
+                            current_line,
+                            current_col,
+                            current_filename,
+                        );
+
                         // Update last jump position
                         self.mark_manager.set_last_jump(current_line, current_col);
-                        
+
                         // For global marks (A-Z), switch to the correct buffer if needed
                         if mark_char.is_ascii_uppercase() && mark.filename.is_some() {
                             let target_filename = mark.filename.as_ref().unwrap();
                             if let Err(e) = self.buffer_manager.switch_to_file(target_filename) {
-                                self.status_message = format!("Cannot open file for mark '{mark_char}': {e}");
+                                self.status_message =
+                                    format!("Cannot open file for mark '{mark_char}': {e}");
                                 return;
                             }
                             self.view.reset_scroll(); // Reset scroll when switching buffers
                         }
-                        
+
                         // Jump to mark (exact position)
                         let doc_mut = self.current_document_mut();
                         doc_mut.cursor_line = mark.line;
                         doc_mut.cursor_column = mark.column;
-                        
+
                         let filename_info = if let Some(ref filename) = mark.filename {
                             format!(" in {}", filename.display())
                         } else {
                             String::new()
                         };
-                        self.status_message = format!("Jumped to mark '{}' at line {}, column {}{}", 
-                            mark_char, mark.line + 1, mark.column + 1, filename_info);
+                        self.status_message = format!(
+                            "Jumped to mark '{}' at line {}, column {}{}",
+                            mark_char,
+                            mark.line + 1,
+                            mark.column + 1,
+                            filename_info
+                        );
                     } else {
                         self.status_message = format!("Mark '{mark_char}' not set");
                     }
@@ -616,26 +731,31 @@ impl Controller {
             Command::JumpToMarkLine(mark_char) => {
                 if mark_char.is_ascii_lowercase() {
                     // Local mark - check current document
-                    if let Some((line, _column)) = self.current_document().get_local_mark(mark_char) {
+                    if let Some((line, _column)) = self.current_document().get_local_mark(mark_char)
+                    {
                         // Get current position before borrowing mutably
                         let (current_line, current_col, current_filename) = {
                             let doc = self.current_document();
                             (doc.cursor_line, doc.cursor_column, doc.filename.clone())
                         };
-                        
+
                         // Add current position to jump list before jumping
-                        self.mark_manager.add_to_jump_list(current_line, current_col, current_filename);
-                        
+                        self.mark_manager.add_to_jump_list(
+                            current_line,
+                            current_col,
+                            current_filename,
+                        );
+
                         // Update last jump position
                         self.mark_manager.set_last_jump(current_line, current_col);
-                        
+
                         // Jump to mark line, first non-whitespace character
                         let doc_mut = self.current_document_mut();
                         doc_mut.cursor_line = line;
                         doc_mut.move_first_non_whitespace();
-                        
-                        self.status_message = format!("Jumped to mark '{}' line {}", 
-                            mark_char, line + 1);
+
+                        self.status_message =
+                            format!("Jumped to mark '{}' line {}", mark_char, line + 1);
                     } else {
                         self.status_message = format!("Mark '{mark_char}' not set");
                     }
@@ -647,35 +767,44 @@ impl Controller {
                             let doc = self.current_document();
                             (doc.cursor_line, doc.cursor_column, doc.filename.clone())
                         };
-                        
+
                         // Add current position to jump list before jumping
-                        self.mark_manager.add_to_jump_list(current_line, current_col, current_filename);
-                        
+                        self.mark_manager.add_to_jump_list(
+                            current_line,
+                            current_col,
+                            current_filename,
+                        );
+
                         // Update last jump position
                         self.mark_manager.set_last_jump(current_line, current_col);
-                        
+
                         // For global marks (A-Z), switch to the correct buffer if needed
                         if mark_char.is_ascii_uppercase() && mark.filename.is_some() {
                             let target_filename = mark.filename.as_ref().unwrap();
                             if let Err(e) = self.buffer_manager.switch_to_file(target_filename) {
-                                self.status_message = format!("Cannot open file for mark '{mark_char}': {e}");
+                                self.status_message =
+                                    format!("Cannot open file for mark '{mark_char}': {e}");
                                 return;
                             }
                             self.view.reset_scroll(); // Reset scroll when switching buffers
                         }
-                        
+
                         // Jump to mark line, first non-whitespace character
                         let doc_mut = self.current_document_mut();
                         doc_mut.cursor_line = mark.line;
                         doc_mut.move_first_non_whitespace();
-                        
+
                         let filename_info = if let Some(ref filename) = mark.filename {
                             format!(" in {}", filename.display())
                         } else {
                             String::new()
                         };
-                        self.status_message = format!("Jumped to mark '{}' line {}{}", 
-                            mark_char, mark.line + 1, filename_info);
+                        self.status_message = format!(
+                            "Jumped to mark '{}' line {}{}",
+                            mark_char,
+                            mark.line + 1,
+                            filename_info
+                        );
                     } else {
                         self.status_message = format!("Mark '{mark_char}' not set");
                     }
@@ -691,18 +820,22 @@ impl Controller {
                         }
                         self.view.reset_scroll();
                     }
-                    
+
                     let doc_mut = self.current_document_mut();
                     doc_mut.cursor_line = entry.line;
                     doc_mut.cursor_column = entry.column;
-                    
+
                     let filename_info = if let Some(ref filename) = entry.filename {
                         format!(" in {}", filename.display())
                     } else {
                         String::new()
                     };
-                    self.status_message = format!("Jumped backward to line {}, column {}{}", 
-                        entry.line + 1, entry.column + 1, filename_info);
+                    self.status_message = format!(
+                        "Jumped backward to line {}, column {}{}",
+                        entry.line + 1,
+                        entry.column + 1,
+                        filename_info
+                    );
                 } else {
                     self.status_message = "Already at oldest change".to_string();
                 }
@@ -717,23 +850,27 @@ impl Controller {
                         }
                         self.view.reset_scroll();
                     }
-                    
+
                     let doc_mut = self.current_document_mut();
                     doc_mut.cursor_line = entry.line;
                     doc_mut.cursor_column = entry.column;
-                    
+
                     let filename_info = if let Some(ref filename) = entry.filename {
                         format!(" in {}", filename.display())
                     } else {
                         String::new()
                     };
-                    self.status_message = format!("Jumped forward to line {}, column {}{}", 
-                        entry.line + 1, entry.column + 1, filename_info);
+                    self.status_message = format!(
+                        "Jumped forward to line {}, column {}{}",
+                        entry.line + 1,
+                        entry.column + 1,
+                        filename_info
+                    );
                 } else {
                     self.status_message = "Already at newest change".to_string();
                 }
             }
-            
+
             _ => {} // Should not reach here
         }
     }
@@ -750,7 +887,10 @@ impl Controller {
             }
             Command::SearchForward(pattern) => {
                 // Set pattern first
-                if let Err(e) = self.search_state.set_pattern(pattern.clone(), SearchDirection::Forward) {
+                if let Err(e) = self
+                    .search_state
+                    .set_pattern(pattern.clone(), SearchDirection::Forward)
+                {
                     self.status_message = e.to_string();
                 } else {
                     // Use split borrowing to access buffer_manager and search_state separately
@@ -758,17 +898,21 @@ impl Controller {
                     let cursor_line = doc.cursor_line;
                     let cursor_column = doc.cursor_column;
                     let search_result = self.search_state.search_document(doc);
-                    
+
                     if let Err(e) = search_result {
                         self.status_message = e.to_string();
                     } else {
                         // Find next match
-                        if let Some(search_match) = self.search_state.find_next_match(cursor_line, cursor_column) {
+                        if let Some(search_match) = self
+                            .search_state
+                            .find_next_match(cursor_line, cursor_column)
+                        {
                             let line = search_match.line;
                             let column = search_match.start_col;
-                            let current_index = self.search_state.current_match_index().unwrap_or(0);
+                            let current_index =
+                                self.search_state.current_match_index().unwrap_or(0);
                             let pattern = self.search_state.pattern.clone();
-                            
+
                             // Update cursor position
                             self.buffer_manager.current_document_mut().cursor_line = line;
                             self.buffer_manager.current_document_mut().cursor_column = column;
@@ -782,7 +926,10 @@ impl Controller {
                 self.command_buffer.clear();
             }
             Command::SearchBackward(pattern) => {
-                if let Err(e) = self.search_state.set_pattern(pattern.clone(), SearchDirection::Backward) {
+                if let Err(e) = self
+                    .search_state
+                    .set_pattern(pattern.clone(), SearchDirection::Backward)
+                {
                     self.status_message = e.to_string();
                 } else {
                     // Use split borrowing to access buffer_manager and search_state separately
@@ -790,15 +937,18 @@ impl Controller {
                     let cursor_line = doc.cursor_line;
                     let cursor_column = doc.cursor_column;
                     let search_result = self.search_state.search_document(doc);
-                    
+
                     if let Err(e) = search_result {
                         self.status_message = e.to_string();
-                    } else if let Some(search_match) = self.search_state.find_next_match(cursor_line, cursor_column) {
+                    } else if let Some(search_match) = self
+                        .search_state
+                        .find_next_match(cursor_line, cursor_column)
+                    {
                         let line = search_match.line;
                         let column = search_match.start_col;
                         let current_index = self.search_state.current_match_index().unwrap_or(0);
                         let pattern = self.search_state.pattern.clone();
-                        
+
                         self.buffer_manager.current_document_mut().cursor_line = line;
                         self.buffer_manager.current_document_mut().cursor_column = column;
                         self.status_message = format!("?{pattern} [{current_index}]");
@@ -816,12 +966,15 @@ impl Controller {
                     let doc = self.buffer_manager.current_document();
                     let cursor_line = doc.cursor_line;
                     let cursor_column = doc.cursor_column;
-                    if let Some(search_match) = self.search_state.repeat_last_search(cursor_line, cursor_column) {
+                    if let Some(search_match) = self
+                        .search_state
+                        .repeat_last_search(cursor_line, cursor_column)
+                    {
                         let line = search_match.line;
                         let column = search_match.start_col;
                         let current_index = self.search_state.current_match_index().unwrap_or(0);
                         let pattern = self.search_state.pattern.clone();
-                        
+
                         self.buffer_manager.current_document_mut().cursor_line = line;
                         self.buffer_manager.current_document_mut().cursor_column = column;
                         self.status_message = format!("{pattern} [{current_index}]");
@@ -838,12 +991,15 @@ impl Controller {
                     let doc = self.buffer_manager.current_document();
                     let cursor_line = doc.cursor_line;
                     let cursor_column = doc.cursor_column;
-                    if let Some(search_match) = self.search_state.repeat_last_search_reverse(cursor_line, cursor_column) {
+                    if let Some(search_match) = self
+                        .search_state
+                        .repeat_last_search_reverse(cursor_line, cursor_column)
+                    {
                         let line = search_match.line;
                         let column = search_match.start_col;
                         let current_index = self.search_state.current_match_index().unwrap_or(0);
                         let pattern = self.search_state.pattern.clone();
-                        
+
                         self.buffer_manager.current_document_mut().cursor_line = line;
                         self.buffer_manager.current_document_mut().cursor_column = column;
                         self.status_message = format!("{pattern} [{current_index}]");
@@ -873,42 +1029,54 @@ impl Controller {
             Command::EnterInsertMode => {
                 let doc = self.current_document();
                 let cursor_pos = (doc.cursor_line, doc.cursor_column);
-                self.current_document_mut().undo_manager.start_group(cursor_pos);
+                self.current_document_mut()
+                    .undo_manager
+                    .start_group(cursor_pos);
                 self.mode = Mode::Insert;
             }
             Command::EnterInsertModeAfter => {
                 self.current_document_mut().move_cursor_right();
                 let doc = self.current_document();
                 let cursor_pos = (doc.cursor_line, doc.cursor_column);
-                self.current_document_mut().undo_manager.start_group(cursor_pos);
+                self.current_document_mut()
+                    .undo_manager
+                    .start_group(cursor_pos);
                 self.mode = Mode::Insert;
             }
             Command::EnterInsertModeNewLine => {
                 self.current_document_mut().open_line_below();
                 let doc = self.current_document();
                 let cursor_pos = (doc.cursor_line, doc.cursor_column);
-                self.current_document_mut().undo_manager.start_group(cursor_pos);
+                self.current_document_mut()
+                    .undo_manager
+                    .start_group(cursor_pos);
                 self.mode = Mode::Insert;
             }
             Command::EnterInsertModeNewLineAbove => {
                 self.current_document_mut().open_line_above();
                 let doc = self.current_document();
                 let cursor_pos = (doc.cursor_line, doc.cursor_column);
-                self.current_document_mut().undo_manager.start_group(cursor_pos);
+                self.current_document_mut()
+                    .undo_manager
+                    .start_group(cursor_pos);
                 self.mode = Mode::Insert;
             }
             Command::EnterInsertModeLineEnd => {
                 self.current_document_mut().move_line_end();
                 let doc = self.current_document();
                 let cursor_pos = (doc.cursor_line, doc.cursor_column);
-                self.current_document_mut().undo_manager.start_group(cursor_pos);
+                self.current_document_mut()
+                    .undo_manager
+                    .start_group(cursor_pos);
                 self.mode = Mode::Insert;
             }
             Command::EnterInsertModeLineStart => {
                 self.current_document_mut().move_first_non_whitespace();
                 let doc = self.current_document();
                 let cursor_pos = (doc.cursor_line, doc.cursor_column);
-                self.current_document_mut().undo_manager.start_group(cursor_pos);
+                self.current_document_mut()
+                    .undo_manager
+                    .start_group(cursor_pos);
                 self.mode = Mode::Insert;
             }
             Command::ExitInsertMode => {
@@ -917,27 +1085,32 @@ impl Controller {
                     let doc = self.current_document();
                     (doc.cursor_line, doc.cursor_column)
                 };
-                self.current_document_mut().undo_manager.end_group(cursor_pos);
-                
+                self.current_document_mut()
+                    .undo_manager
+                    .end_group(cursor_pos);
+
                 // Mark last insert position when leaving insert mode
                 let cursor_pos = {
                     let doc = self.current_document();
                     (doc.cursor_line, doc.cursor_column)
                 };
-                self.mark_manager.set_last_insert(cursor_pos.0, cursor_pos.1);
+                self.mark_manager
+                    .set_last_insert(cursor_pos.0, cursor_pos.1);
                 self.mode = Mode::Normal;
             }
             Command::InsertChar(c) => {
                 self.current_document_mut().insert_char(c);
                 // Mark change position
                 let doc = self.current_document();
-                self.mark_manager.set_last_change(doc.cursor_line, doc.cursor_column);
+                self.mark_manager
+                    .set_last_change(doc.cursor_line, doc.cursor_column);
             }
             Command::InsertNewline => {
                 self.current_document_mut().insert_newline();
                 // Mark change position
                 let doc = self.current_document();
-                self.mark_manager.set_last_change(doc.cursor_line, doc.cursor_column);
+                self.mark_manager
+                    .set_last_change(doc.cursor_line, doc.cursor_column);
             }
             Command::InsertTab => {
                 let tab_width = self.view.get_tab_stop();
@@ -953,29 +1126,41 @@ impl Controller {
             Command::DeleteChar => {
                 let doc = self.current_document();
                 let cursor_pos = (doc.cursor_line, doc.cursor_column);
-                self.current_document_mut().undo_manager.start_group(cursor_pos);
+                self.current_document_mut()
+                    .undo_manager
+                    .start_group(cursor_pos);
                 self.current_document_mut().delete_char();
                 let doc = self.current_document();
                 let cursor_pos = (doc.cursor_line, doc.cursor_column);
-                self.current_document_mut().undo_manager.end_group(cursor_pos);
+                self.current_document_mut()
+                    .undo_manager
+                    .end_group(cursor_pos);
             }
             Command::DeleteCharForward => {
                 let doc = self.current_document();
                 let cursor_pos = (doc.cursor_line, doc.cursor_column);
-                self.current_document_mut().undo_manager.start_group(cursor_pos);
+                self.current_document_mut()
+                    .undo_manager
+                    .start_group(cursor_pos);
                 self.current_document_mut().delete_char_forward();
                 let doc = self.current_document();
                 let cursor_pos = (doc.cursor_line, doc.cursor_column);
-                self.current_document_mut().undo_manager.end_group(cursor_pos);
+                self.current_document_mut()
+                    .undo_manager
+                    .end_group(cursor_pos);
             }
             Command::DeleteCharBackward => {
                 let doc = self.current_document();
                 let cursor_pos = (doc.cursor_line, doc.cursor_column);
-                self.current_document_mut().undo_manager.start_group(cursor_pos);
+                self.current_document_mut()
+                    .undo_manager
+                    .start_group(cursor_pos);
                 self.current_document_mut().delete_char_backward();
                 let doc = self.current_document();
                 let cursor_pos = (doc.cursor_line, doc.cursor_column);
-                self.current_document_mut().undo_manager.end_group(cursor_pos);
+                self.current_document_mut()
+                    .undo_manager
+                    .end_group(cursor_pos);
             }
             Command::DeleteLine => {
                 self.current_document_mut().delete_line();
@@ -985,8 +1170,11 @@ impl Controller {
                     if self.current_document().lines.len() > 1 {
                         self.current_document_mut().delete_line();
                         // Adjust cursor if we deleted the last line
-                        if self.current_document().cursor_line >= self.current_document().lines.len() {
-                            self.current_document_mut().cursor_line = self.current_document().lines.len() - 1;
+                        if self.current_document().cursor_line
+                            >= self.current_document().lines.len()
+                        {
+                            self.current_document_mut().cursor_line =
+                                self.current_document().lines.len() - 1;
                         }
                     } else {
                         break;
@@ -1038,13 +1226,15 @@ impl Controller {
                 self.current_document_mut().delete_until_char(target);
             }
             Command::DeleteUntilCharBackward(target) => {
-                self.current_document_mut().delete_until_char_backward(target);
+                self.current_document_mut()
+                    .delete_until_char_backward(target);
             }
             Command::DeleteFindChar(target) => {
                 self.current_document_mut().delete_find_char(target);
             }
             Command::DeleteFindCharBackward(target) => {
-                self.current_document_mut().delete_find_char_backward(target);
+                self.current_document_mut()
+                    .delete_find_char_backward(target);
             }
 
             _ => {} // Should not reach here
@@ -1065,8 +1255,11 @@ impl Controller {
                     if !self.current_document().lines.is_empty() {
                         deleted_lines.push(self.current_document_mut().change_line());
                         // Adjust cursor if we're at the end
-                        if self.current_document().cursor_line >= self.current_document().lines.len() {
-                            self.current_document_mut().cursor_line = self.current_document().lines.len().saturating_sub(1);
+                        if self.current_document().cursor_line
+                            >= self.current_document().lines.len()
+                        {
+                            self.current_document_mut().cursor_line =
+                                self.current_document().lines.len().saturating_sub(1);
                         }
                     } else {
                         break;
@@ -1136,7 +1329,9 @@ impl Controller {
                 deleted
             }
             Command::ChangeUntilCharBackward(target) => {
-                let deleted = self.current_document_mut().change_until_char_backward(target);
+                let deleted = self
+                    .current_document_mut()
+                    .change_until_char_backward(target);
                 self.mode = Mode::Insert;
                 deleted
             }
@@ -1146,7 +1341,9 @@ impl Controller {
                 deleted
             }
             Command::ChangeFindCharBackward(target) => {
-                let deleted = self.current_document_mut().change_find_char_backward(target);
+                let deleted = self
+                    .current_document_mut()
+                    .change_find_char_backward(target);
                 self.mode = Mode::Insert;
                 deleted
             }
@@ -1155,9 +1352,9 @@ impl Controller {
 
         // Store deleted text in unnamed register (for potential later use with undo/redo)
         self.register_manager.store_in_register(
-            None, 
-            _deleted_text, 
-            crate::registers::RegisterType::Character
+            None,
+            _deleted_text,
+            crate::registers::RegisterType::Character,
         );
     }
 
@@ -1165,19 +1362,22 @@ impl Controller {
         match command {
             Command::EnterVisualChar => {
                 let doc = self.current_document();
-                let selection = Selection::new(doc.cursor_line, doc.cursor_column, VisualMode::Char);
+                let selection =
+                    Selection::new(doc.cursor_line, doc.cursor_column, VisualMode::Char);
                 self.visual_selection = Some(selection);
                 self.mode = Mode::VisualChar;
             }
             Command::EnterVisualLine => {
                 let doc = self.current_document();
-                let selection = Selection::new(doc.cursor_line, doc.cursor_column, VisualMode::Line);
+                let selection =
+                    Selection::new(doc.cursor_line, doc.cursor_column, VisualMode::Line);
                 self.visual_selection = Some(selection);
                 self.mode = Mode::VisualLine;
             }
             Command::EnterVisualBlock => {
                 let doc = self.current_document();
-                let selection = Selection::new(doc.cursor_line, doc.cursor_column, VisualMode::Block);
+                let selection =
+                    Selection::new(doc.cursor_line, doc.cursor_column, VisualMode::Block);
                 self.visual_selection = Some(selection);
                 self.mode = Mode::VisualBlock;
             }
@@ -1195,14 +1395,23 @@ impl Controller {
                 if let Some(selection) = self.visual_selection.take() {
                     let tab_width = self.view.get_tab_stop();
                     let use_spaces = self.current_document().expand_tab;
-                    VisualModeHandler::indent_selection(&selection, self.current_document_mut(), tab_width, use_spaces);
+                    VisualModeHandler::indent_selection(
+                        &selection,
+                        self.current_document_mut(),
+                        tab_width,
+                        use_spaces,
+                    );
                     self.mode = Mode::Normal;
                 }
             }
             Command::VisualDedent => {
                 if let Some(selection) = self.visual_selection.take() {
                     let tab_width = self.view.get_tab_stop();
-                    VisualModeHandler::dedent_selection(&selection, self.current_document_mut(), tab_width);
+                    VisualModeHandler::dedent_selection(
+                        &selection,
+                        self.current_document_mut(),
+                        tab_width,
+                    );
                     self.mode = Mode::Normal;
                 }
             }
@@ -1214,19 +1423,20 @@ impl Controller {
         }
     }
 
-
     fn execute_indentation_command(&mut self, command: Command) {
         match command {
             Command::IndentLine => {
                 let tab_width = self.view.get_tab_stop();
                 let use_spaces = self.current_document().expand_tab;
-                self.current_document_mut().indent_line(tab_width, use_spaces);
+                self.current_document_mut()
+                    .indent_line(tab_width, use_spaces);
             }
             Command::IndentLines(count) => {
                 let tab_width = self.view.get_tab_stop();
                 let use_spaces = self.current_document().expand_tab;
                 let start_line = self.current_document().cursor_line;
-                self.current_document_mut().indent_lines(start_line, count, tab_width, use_spaces);
+                self.current_document_mut()
+                    .indent_lines(start_line, count, tab_width, use_spaces);
             }
             Command::DedentLine => {
                 let tab_width = self.view.get_tab_stop();
@@ -1235,7 +1445,8 @@ impl Controller {
             Command::DedentLines(count) => {
                 let tab_width = self.view.get_tab_stop();
                 let start_line = self.current_document().cursor_line;
-                self.current_document_mut().dedent_lines(start_line, count, tab_width);
+                self.current_document_mut()
+                    .dedent_lines(start_line, count, tab_width);
             }
 
             _ => {} // Should not reach here
@@ -1296,7 +1507,8 @@ impl Controller {
     }
 
     fn match_bracket(&mut self) {
-        if let Some((target_line, target_column)) = self.current_document().find_matching_bracket() {
+        if let Some((target_line, target_column)) = self.current_document().find_matching_bracket()
+        {
             self.current_document_mut().cursor_line = target_line;
             self.current_document_mut().cursor_column = target_column;
             self.update_visual_selection();
@@ -1317,40 +1529,45 @@ impl Controller {
         };
         let cursor_line = doc.cursor_line;
         let cursor_column = doc.cursor_column;
-        
+
         // Escape special regex characters in the word to search for literal text
         let escaped_word = regex::escape(&word);
         let is_forward = matches!(direction, SearchDirection::Forward);
-        
+
         // Set up the search pattern
-        if let Err(e) = self.search_state.set_pattern(escaped_word.clone(), direction) {
+        if let Err(e) = self
+            .search_state
+            .set_pattern(escaped_word.clone(), direction)
+        {
             self.status_message = e.to_string();
             return;
         }
-        
+
         // Perform the search
         let doc = self.buffer_manager.current_document();
         if let Err(e) = self.search_state.search_document(doc) {
             self.status_message = e.to_string();
             return;
         }
-        
+
         // Find next/previous match based on direction
         let search_match = if is_forward {
-            self.search_state.find_next_match(cursor_line, cursor_column)
+            self.search_state
+                .find_next_match(cursor_line, cursor_column)
         } else {
-            self.search_state.find_prev_match(cursor_line, cursor_column)
+            self.search_state
+                .find_prev_match(cursor_line, cursor_column)
         };
-        
+
         if let Some(search_match) = search_match {
             let line = search_match.line;
             let column = search_match.start_col;
             let current_index = self.search_state.current_match_index().unwrap_or(0);
-            
+
             // Update cursor position
             self.current_document_mut().cursor_line = line;
             self.current_document_mut().cursor_column = column;
-            
+
             let direction_char = if is_forward { '*' } else { '#' };
             self.status_message = format!("{direction_char}{word} [{current_index}]");
         } else {
@@ -1406,7 +1623,7 @@ impl Controller {
 
     fn apply_undo_action(&mut self, action: &UndoAction) {
         let doc = self.current_document_mut();
-        
+
         match action {
             UndoAction::InsertText { line, column, text } => {
                 if *line < doc.lines.len() {
@@ -1444,7 +1661,11 @@ impl Controller {
                     }
                 }
             }
-            UndoAction::JoinLines { line, separator, second_line_text } => {
+            UndoAction::JoinLines {
+                line,
+                separator,
+                second_line_text,
+            } => {
                 if *line < doc.lines.len() && *line + 1 < doc.lines.len() {
                     doc.lines.remove(*line + 1);
                     doc.lines[*line].push_str(separator);
@@ -1452,7 +1673,7 @@ impl Controller {
                 }
             }
         }
-        
+
         doc.modified = true;
     }
 
@@ -1481,7 +1702,7 @@ impl Controller {
                 false
             }
 
-            _ => false
+            _ => false,
         }
     }
 
@@ -1513,6 +1734,10 @@ impl Controller {
             }
             "marks" => {
                 self.handle_marks_command();
+                false
+            }
+            "unmatched" => {
+                self.handle_unmatched_command();
                 false
             }
             "jumps" | "ju" => {
@@ -1612,6 +1837,39 @@ impl Controller {
         }
     }
 
+    /// Handle the :unmatched command - toggle highlighting of all unmatched brackets
+    fn handle_unmatched_command(&mut self) {
+        self.show_all_unmatched = !self.show_all_unmatched;
+
+        if self.show_all_unmatched {
+            // Cache the unmatched brackets for the current document
+            let unmatched = self.current_document().find_all_unmatched_brackets();
+            let count = unmatched.len();
+            self.cached_unmatched_brackets = Some(unmatched);
+            self.status_message = if count > 0 {
+                format!(
+                    "Highlighting {} unmatched bracket{}",
+                    count,
+                    if count == 1 { "" } else { "s" }
+                )
+            } else {
+                "No unmatched brackets found".to_string()
+            };
+        } else {
+            // Clear the cache and turn off highlighting
+            self.cached_unmatched_brackets = None;
+            self.status_message = "Unmatched bracket highlighting disabled".to_string();
+        }
+    }
+
+    /// Refresh unmatched brackets cache if highlighting is enabled
+    fn refresh_unmatched_cache_if_needed(&mut self) {
+        if self.show_all_unmatched {
+            let unmatched = self.current_document().find_all_unmatched_brackets();
+            self.cached_unmatched_brackets = Some(unmatched);
+        }
+    }
+
     pub fn get_display_filename(&self) -> &str {
         self.buffer_manager.get_display_filename()
     }
@@ -1643,13 +1901,19 @@ impl Controller {
                 self.buffer_manager.buffer_count(),
                 self.get_display_filename()
             );
-            
+
+            // Refresh unmatched brackets cache if highlighting is enabled and needed
+            if self.show_all_unmatched {
+                self.refresh_unmatched_cache_if_needed();
+            }
+
             // Borrow fields separately to avoid borrowing conflicts
             let doc = self.buffer_manager.current_document();
-            
+
             // Calculate matching bracket position for highlighting
             let matching_bracket = doc.find_matching_bracket();
-            
+            let unmatched_bracket = doc.is_unmatched_bracket();
+
             let params = RenderParams {
                 mode: &self.mode,
                 command_buffer: &self.command_buffer,
@@ -1658,8 +1922,14 @@ impl Controller {
                 visual_selection: self.visual_selection.as_ref(),
                 search_state: Some(&self.search_state),
                 matching_bracket,
+                unmatched_bracket,
+                all_unmatched_brackets: if self.show_all_unmatched {
+                    self.cached_unmatched_brackets.as_ref()
+                } else {
+                    None
+                },
             };
-self.view.render(doc, &params)?;
+            self.view.render(doc, &params)?;
 
             match event::read()? {
                 Event::Key(key_event) => {

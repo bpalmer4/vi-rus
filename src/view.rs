@@ -4,12 +4,12 @@ use crate::search::SearchState;
 use crate::visual_mode::Selection;
 use crossterm::{
     cursor, execute,
-    style::{Color, SetBackgroundColor, SetForegroundColor, ResetColor},
+    style::{Color, ResetColor, SetBackgroundColor, SetForegroundColor},
     terminal::{Clear, ClearType, size},
 };
 use std::io::{self, Write, stdout};
 
-#[derive(Copy, Clone)]
+#[derive(Clone)]
 pub struct RenderParams<'a> {
     pub mode: &'a Mode,
     pub command_buffer: &'a str,
@@ -18,8 +18,9 @@ pub struct RenderParams<'a> {
     pub visual_selection: Option<&'a Selection>,
     pub search_state: Option<&'a SearchState>,
     pub matching_bracket: Option<(usize, usize)>, // (line, column) of matching bracket
+    pub unmatched_bracket: Option<(usize, usize)>, // (line, column) of unmatched bracket at cursor
+    pub all_unmatched_brackets: Option<&'a Vec<(usize, usize)>>, // All unmatched brackets in document
 }
-
 
 pub struct View {
     last_lines: Vec<String>,
@@ -75,22 +76,24 @@ impl View {
         horizontal_scroll: usize,
         search_state: Option<&SearchState>,
         matching_bracket: Option<(usize, usize)>,
+        unmatched_bracket: Option<(usize, usize)>,
+        all_unmatched_brackets: Option<&Vec<(usize, usize)>>,
     ) -> String {
         let mut result = String::new();
         let chars: Vec<char> = text.chars().collect();
-        
+
         for (i, ch) in chars.iter().enumerate() {
             let actual_col = horizontal_scroll + i;
             let mut highlighted = false;
-            
+
             // Search highlighting
             if let Some(search) = search_state {
                 if !search.matches.is_empty() {
                     for search_match in &search.matches {
-                        if search_match.line == line_idx &&
-                           actual_col >= search_match.start_col && 
-                           actual_col < search_match.end_col {
-                            
+                        if search_match.line == line_idx
+                            && actual_col >= search_match.start_col
+                            && actual_col < search_match.end_col
+                        {
                             if actual_col == search_match.start_col {
                                 // Start highlight
                                 result.push_str(&format!(
@@ -110,20 +113,54 @@ impl View {
                     }
                 }
             }
-            
+
             // Bracket highlighting
             if !highlighted {
-                let is_cursor_bracket = line_idx == cursor_line && actual_col == cursor_col
+                let is_cursor_bracket = line_idx == cursor_line
+                    && actual_col == cursor_col
                     && matches!(*ch, '(' | ')' | '[' | ']' | '{' | '}' | '<' | '>');
-                
+
                 let is_matching_bracket = if let Some((match_line, match_col)) = matching_bracket {
-                    line_idx == match_line && actual_col == match_col
+                    line_idx == match_line
+                        && actual_col == match_col
                         && matches!(*ch, '(' | ')' | '[' | ']' | '{' | '}' | '<' | '>')
                 } else {
                     false
                 };
-                
-                if is_cursor_bracket || is_matching_bracket {
+
+                // Check if this position is an unmatched bracket (cursor-specific)
+                let is_cursor_unmatched_bracket =
+                    if let Some((unmatch_line, unmatch_col)) = unmatched_bracket {
+                        line_idx == unmatch_line
+                            && actual_col == unmatch_col
+                            && matches!(*ch, '(' | ')' | '[' | ']' | '{' | '}' | '<' | '>')
+                    } else {
+                        false
+                    };
+
+                // Check if this position is in the list of all unmatched brackets
+                let is_all_unmatched_bracket = if let Some(all_unmatched) = all_unmatched_brackets {
+                    all_unmatched.iter().any(|(unmatch_line, unmatch_col)| {
+                        line_idx == *unmatch_line
+                            && actual_col == *unmatch_col
+                            && matches!(*ch, '(' | ')' | '[' | ']' | '{' | '}' | '<' | '>')
+                    })
+                } else {
+                    false
+                };
+
+                if is_cursor_unmatched_bracket || is_all_unmatched_bracket {
+                    // Highlight unmatched brackets with red background
+                    result.push_str(&format!(
+                        "{}{}{}{}",
+                        SetBackgroundColor(Color::Red),
+                        SetForegroundColor(Color::White),
+                        ch,
+                        ResetColor
+                    ));
+                    highlighted = true;
+                } else if is_cursor_bracket || is_matching_bracket {
+                    // Highlight matched brackets with cyan background
                     result.push_str(&format!(
                         "{}{}{}{}",
                         SetBackgroundColor(Color::Cyan),
@@ -134,21 +171,16 @@ impl View {
                     highlighted = true;
                 }
             }
-            
+
             if !highlighted {
                 result.push(*ch);
             }
         }
-        
+
         result
     }
-    
 
-    pub fn render<'a>(
-        &mut self,
-        doc: &Document,
-        params: &RenderParams<'a>,
-    ) -> io::Result<()> {
+    pub fn render<'a>(&mut self, doc: &Document, params: &RenderParams<'a>) -> io::Result<()> {
         let (width, height) = size()?;
         let start_line = if params.buffer_info.is_some() {
             1usize
@@ -278,17 +310,19 @@ impl View {
                     self.horizontal_scroll,
                     params.search_state,
                     params.matching_bracket,
+                    params.unmatched_bracket,
+                    params.all_unmatched_brackets,
                 );
 
                 // Add visual selection indicator only when in visual mode
                 let line_marker = if let Some(selection) = params.visual_selection {
                     if selection.is_line_in_selection(doc_line_idx) {
-                        ">"  // Simple indicator for selected lines
+                        ">" // Simple indicator for selected lines
                     } else {
-                        " "  // Space to maintain alignment when in visual mode
+                        " " // Space to maintain alignment when in visual mode
                     }
                 } else {
-                    ""  // No marker when not in visual mode
+                    "" // No marker when not in visual mode
                 };
 
                 format!("{line_marker}{line_num_str}{text_part}")
@@ -355,7 +389,11 @@ impl View {
 
         // Update cursor position if changed (adjusted for scrolling and line numbers)
         let new_cursor_pos = match &self.last_mode {
-            Mode::Normal | Mode::Insert | Mode::VisualChar | Mode::VisualLine | Mode::VisualBlock => {
+            Mode::Normal
+            | Mode::Insert
+            | Mode::VisualChar
+            | Mode::VisualLine
+            | Mode::VisualBlock => {
                 let screen_line = doc.cursor_line.saturating_sub(self.scroll_offset) + start_line;
                 let screen_column =
                     doc.cursor_column.saturating_sub(self.horizontal_scroll) + line_num_width;
@@ -391,7 +429,6 @@ impl View {
             self.needs_full_redraw = true;
         }
     }
-
 
     pub fn set_tab_stop(&mut self, tab_stop: usize) {
         if self.tab_stop != tab_stop {

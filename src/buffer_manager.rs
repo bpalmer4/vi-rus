@@ -13,7 +13,6 @@ impl BufferManager {
         }
     }
 
-
     pub fn new_with_files(filenames: Vec<std::path::PathBuf>) -> Result<Self, std::io::Error> {
         if filenames.is_empty() {
             return Ok(Self::new());
@@ -210,9 +209,7 @@ impl BufferManager {
         if buffer_num > 0 && buffer_num <= self.buffers.len() {
             self.current_buffer = buffer_num - 1; // Convert to 0-based index
             let filename = self.get_display_filename();
-            Ok(format!(
-                "Switched to buffer {buffer_num}: \"{filename}\""
-            ))
+            Ok(format!("Switched to buffer {buffer_num}: \"{filename}\""))
         } else {
             Err(format!("Buffer {buffer_num} does not exist"))
         }
@@ -240,7 +237,10 @@ impl BufferManager {
     }
 
     /// Switch to an existing buffer with the given filename, or open it if not found
-    pub fn switch_to_file(&mut self, target_filename: &std::path::PathBuf) -> Result<(), std::io::Error> {
+    pub fn switch_to_file(
+        &mut self,
+        target_filename: &std::path::PathBuf,
+    ) -> Result<(), std::io::Error> {
         // First, check if the file is already open in a buffer
         for (i, buffer) in self.buffers.iter().enumerate() {
             if let Some(ref buffer_filename) = buffer.filename {
@@ -250,7 +250,7 @@ impl BufferManager {
                 }
             }
         }
-        
+
         // File not found in existing buffers, try to open it
         match Document::from_file(target_filename.clone()) {
             Ok(doc) => {
@@ -258,7 +258,7 @@ impl BufferManager {
                 self.current_buffer = self.buffers.len() - 1;
                 Ok(())
             }
-            Err(e) => Err(e)
+            Err(e) => Err(e),
         }
     }
 }

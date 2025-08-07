@@ -25,7 +25,7 @@ pub enum UndoAction {
     },
     JoinLines {
         line: usize,
-        separator: String, // What was used to join (space, nothing, etc.)
+        separator: String,        // What was used to join (space, nothing, etc.)
         second_line_text: String, // The text from the second line
     },
 }
@@ -51,12 +51,20 @@ impl UndoAction {
                 line: *line,
                 text: text.clone(),
             },
-            UndoAction::SplitLine { line, column: _, text } => UndoAction::JoinLines {
+            UndoAction::SplitLine {
+                line,
+                column: _,
+                text,
+            } => UndoAction::JoinLines {
                 line: *line,
                 separator: String::new(),
                 second_line_text: text.clone(),
             },
-            UndoAction::JoinLines { line, separator: _, second_line_text } => UndoAction::SplitLine {
+            UndoAction::JoinLines {
+                line,
+                separator: _,
+                second_line_text,
+            } => UndoAction::SplitLine {
                 line: *line,
                 column: 0, // Will be recalculated based on the line content
                 text: second_line_text.clone(),
@@ -143,12 +151,12 @@ impl UndoManager {
 
     fn push_undo_group(&mut self, group: UndoGroup) {
         self.undo_stack.push(group);
-        
+
         // Limit the undo stack size
         if self.undo_stack.len() > self.max_undo_levels {
             self.undo_stack.remove(0);
         }
-        
+
         // Clear redo stack when new actions are performed
         self.redo_stack.clear();
     }
