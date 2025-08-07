@@ -1,0 +1,77 @@
+# AI
+CLAUDE.md
+.grok
+.claude
+
+# Rust/Cargo generated files
+/target/
+**/*.rs.bk
+Cargo.lock
+vi-rus
+
+# IDE/Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.vim/
+.netrwhist
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# Test files (keep sample files but ignore temporary test files)
+test_*.txt
+temp_*.txt
+*.tmp
+
+# Log files
+*.log
+
+# Backup files
+*.bak
+*.backup
+*~
+
+# Runtime configuration files (user-specific)
+.virusrc.local
+
+# Debug files
+*.pdb
+*.dSYM/
+
+# Coverage reports
+tarpaulin-report.html
+cobertura.xml
+lcov.info
+
+# Benchmark results
+criterion/
+
+# Flamegraph files
+flamegraph.svg
+perf.data*
+
+# Documentation build artifacts
+/doc/
+
+# Release artifacts
+*.deb
+*.rpm
+*.tar.gz
+*.zip
+
+# Local development files
+.env
+.env.local
+
+# Profiling data
+*.profraw
