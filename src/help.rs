@@ -6,10 +6,10 @@ pub fn create_help_document() -> Document {
         "==================".to_string(),
         "".to_string(),
         "MOVEMENT (Normal Mode):".to_string(),
-        "  h, <- - Move left".to_string(),
-        "  j, v - Move down".to_string(),
-        "  k, ^ - Move up".to_string(),
-        "  l, -> - Move right".to_string(),
+        "  h, ← - Move left".to_string(),
+        "  j, ↓ - Move down".to_string(),
+        "  k, ↑ - Move up".to_string(),
+        "  l, → - Move right".to_string(),
         "".to_string(),
         "WORD MOVEMENT:".to_string(),
         "  w - Next word start".to_string(),
@@ -349,8 +349,45 @@ mod tests {
         }
         
         assert_eq!(unicode_doc.line_count(), 3);
-        // These might fail due to Unicode handling issues
-        // assert_eq!(unicode_doc.get_line(0).unwrap_or_default(), "  h, ← - Move left");
+        // Test that Unicode characters are handled correctly now
+        assert_eq!(unicode_doc.get_line(0).unwrap_or_default(), "  h, ← - Move left");
+        assert_eq!(unicode_doc.get_line(1).unwrap_or_default(), "  j, ↓ - Move down");
+        assert_eq!(unicode_doc.get_line(2).unwrap_or_default(), "  k, ↑ - Move up");
+    }
+    
+    #[test] 
+    fn test_various_unicode_characters() {
+        use crate::text_buffer::TextBuffer;
+        use std::collections::HashMap;
+        
+        let content = "😀 emoji\n🔥 fire\n✅ checkmark\nкириллица\n中文字符\n→←↑↓ arrows".to_string();
+        let doc = Document {
+            text_buffer: TextBuffer::from_string(content),
+            cursor_line: 0,
+            cursor_column: 0,
+            filename: None,
+            modified: false,
+            line_ending: crate::document::LineEnding::Unix,
+            expand_tab: true,
+            local_marks: HashMap::new(),
+            undo_manager: crate::undo::UndoManager::new(),
+        };
+        
+        println!("Various Unicode test - {} lines:", doc.line_count());
+        for i in 0..doc.line_count() {
+            let line = doc.get_line(i).unwrap_or_default();
+            println!("   Line {}: '{}'", i, line);
+        }
+        
+        assert_eq!(doc.line_count(), 6);
+        assert_eq!(doc.get_line(0).unwrap_or_default(), "😀 emoji");
+        assert_eq!(doc.get_line(1).unwrap_or_default(), "🔥 fire");
+        assert_eq!(doc.get_line(2).unwrap_or_default(), "✅ checkmark");
+        assert_eq!(doc.get_line(3).unwrap_or_default(), "кириллица");
+        assert_eq!(doc.get_line(4).unwrap_or_default(), "中文字符");
+        assert_eq!(doc.get_line(5).unwrap_or_default(), "→←↑↓ arrows");
+        
+        println!("✅ Various Unicode characters handled correctly");
     }
     
     #[test]
@@ -366,8 +403,8 @@ mod tests {
         assert_eq!(help_doc.get_line(1).unwrap_or_default(), "==================");
         assert_eq!(help_doc.get_line(2).unwrap_or_default(), "");
         assert_eq!(help_doc.get_line(3).unwrap_or_default(), "MOVEMENT (Normal Mode):");
-        assert_eq!(help_doc.get_line(4).unwrap_or_default(), "  h, <- - Move left");
-        assert_eq!(help_doc.get_line(5).unwrap_or_default(), "  j, v - Move down");
+        assert_eq!(help_doc.get_line(4).unwrap_or_default(), "  h, ← - Move left");
+        assert_eq!(help_doc.get_line(5).unwrap_or_default(), "  j, ↓ - Move down");
         
         // Verify content is accessible overall
         let content = help_doc.get_piece_table_content();

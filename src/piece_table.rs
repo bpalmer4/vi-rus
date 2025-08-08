@@ -44,9 +44,13 @@ impl LineIndex {
         self.line_starts.clear();
         self.line_starts.push(0);
         
-        for (i, ch) in text.chars().enumerate() {
+        let mut byte_pos = 0;
+        for ch in text.chars() {
             if ch == '\n' {
-                self.line_starts.push(i + 1);
+                byte_pos += ch.len_utf8();
+                self.line_starts.push(byte_pos);
+            } else {
+                byte_pos += ch.len_utf8();
             }
         }
         self.valid = true;
@@ -70,6 +74,37 @@ pub struct PieceTable {
 }
 
 impl PieceTable {
+    /// Safe substring that respects UTF-8 character boundaries
+    fn safe_substring(text: &str, start_byte: usize, end_byte: usize) -> String {
+        if start_byte >= text.len() {
+            return String::new();
+        }
+        
+        let end_byte = end_byte.min(text.len());
+        
+        // Find safe start position (at a character boundary)
+        let safe_start = if text.is_char_boundary(start_byte) {
+            start_byte
+        } else {
+            // Find the next character boundary
+            (start_byte..text.len()).find(|&i| text.is_char_boundary(i)).unwrap_or(text.len())
+        };
+        
+        // Find safe end position (at a character boundary)  
+        let safe_end = if text.is_char_boundary(end_byte) {
+            end_byte
+        } else {
+            // Find the previous character boundary
+            (0..=end_byte).rev().find(|&i| text.is_char_boundary(i)).unwrap_or(0)
+        };
+        
+        if safe_start >= safe_end {
+            return String::new();
+        }
+        
+        text[safe_start..safe_end].to_string()
+    }
+
     pub fn new() -> Self {
         Self {
             original: String::new(),
@@ -260,7 +295,9 @@ impl PieceTable {
                 BufferType::Add => &self.add[piece.start..piece.start + piece.length],
             };
 
-            result.push_str(&text[piece_start_in_range..piece_end_in_range]);
+            // Ensure we slice at UTF-8 character boundaries
+            let safe_text = Self::safe_substring(text, piece_start_in_range, piece_end_in_range);
+            result.push_str(&safe_text);
             current_offset = piece_end;
         }
 
