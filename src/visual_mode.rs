@@ -1,5 +1,19 @@
 use crate::document::Document;
 
+// Helper function to get line count efficiently
+fn get_line_count(document: &Document) -> usize {
+    if document.use_piece_table {
+        if let Some(ref text_buffer) = document.text_buffer {
+            let mut text_buffer = text_buffer.clone();
+            text_buffer.line_count()
+        } else {
+            0
+        }
+    } else {
+        get_line_count(document)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum VisualMode {
     Char,
@@ -142,14 +156,14 @@ impl VisualModeHandler {
 
                     // Middle lines
                     for line_idx in (start_line + 1)..end_line {
-                        if line_idx < document.lines.len() {
+                        if line_idx < get_line_count(document) {
                             result.push_str(&document.lines[line_idx]);
                             result.push('\n');
                         }
                     }
 
                     // Last line
-                    if end_line < document.lines.len() {
+                    if end_line < get_line_count(document) {
                         let last_line = &document.lines[end_line];
                         let end = end_col.min(last_line.len());
                         result.push_str(&last_line[..end]);
@@ -159,7 +173,7 @@ impl VisualModeHandler {
             VisualMode::Line => {
                 // Select entire lines
                 for line_idx in start_line..=end_line {
-                    if line_idx < document.lines.len() {
+                    if line_idx < get_line_count(document) {
                         result.push_str(&document.lines[line_idx]);
                         if line_idx < end_line {
                             result.push('\n');
@@ -170,7 +184,7 @@ impl VisualModeHandler {
             VisualMode::Block => {
                 // Block selection - rectangular region
                 for line_idx in start_line..=end_line {
-                    if line_idx < document.lines.len() {
+                    if line_idx < get_line_count(document) {
                         let line = &document.lines[line_idx];
                         let left = start_col.min(line.len());
                         let right = end_col.min(line.len());
@@ -203,7 +217,7 @@ impl VisualModeHandler {
                 } else {
                     // Multi-line deletion
                     // Get the remaining parts of first and last lines
-                    let first_line_start = if start_line < document.lines.len() {
+                    let first_line_start = if start_line < get_line_count(document) {
                         document.lines[start_line]
                             [..start_col.min(document.lines[start_line].len())]
                             .to_string()
@@ -211,7 +225,7 @@ impl VisualModeHandler {
                         String::new()
                     };
 
-                    let last_line_end = if end_line < document.lines.len() {
+                    let last_line_end = if end_line < get_line_count(document) {
                         let last_line = &document.lines[end_line];
                         let end_pos = end_col.min(last_line.len());
                         last_line[end_pos..].to_string()
@@ -220,15 +234,15 @@ impl VisualModeHandler {
                     };
 
                     // Remove all lines in the selection
-                    for _ in start_line..=end_line.min(document.lines.len() - 1) {
-                        if start_line < document.lines.len() {
+                    for _ in start_line..=end_line.min(get_line_count(document) - 1) {
+                        if start_line < get_line_count(document) {
                             document.lines.remove(start_line);
                         }
                     }
 
                     // Insert the combined line
                     let combined_line = first_line_start + &last_line_end;
-                    if start_line <= document.lines.len() {
+                    if start_line <= get_line_count(document) {
                         document.lines.insert(start_line, combined_line);
                     } else {
                         document.lines.push(combined_line);
@@ -237,8 +251,8 @@ impl VisualModeHandler {
             }
             VisualMode::Line => {
                 // Delete entire lines
-                for _ in start_line..=end_line.min(document.lines.len() - 1) {
-                    if start_line < document.lines.len() {
+                for _ in start_line..=end_line.min(get_line_count(document) - 1) {
+                    if start_line < get_line_count(document) {
                         document.lines.remove(start_line);
                     }
                 }
@@ -251,7 +265,7 @@ impl VisualModeHandler {
             VisualMode::Block => {
                 // Block deletion - remove rectangular region from each line
                 for line_idx in start_line..=end_line {
-                    if line_idx < document.lines.len() {
+                    if line_idx < get_line_count(document) {
                         let line = &mut document.lines[line_idx];
                         let left = start_col.min(line.len());
                         let right = end_col.min(line.len());
@@ -264,7 +278,7 @@ impl VisualModeHandler {
         }
 
         // Update cursor position
-        document.cursor_line = start_line.min(document.lines.len() - 1);
+        document.cursor_line = start_line.min(get_line_count(document) - 1);
         document.cursor_column = start_col.min(document.lines[document.cursor_line].len());
         document.modified = true;
     }
@@ -286,7 +300,7 @@ impl VisualModeHandler {
             VisualMode::Line | VisualMode::Char => {
                 // Indent entire lines
                 for line_idx in start_line..=end_line {
-                    if line_idx < document.lines.len() {
+                    if line_idx < get_line_count(document) {
                         document.lines[line_idx].insert_str(0, &indent);
                     }
                 }
@@ -295,7 +309,7 @@ impl VisualModeHandler {
                 // Block indent - insert at the left column of the block
                 let (_, start_col, _, _) = selection.get_ordered_bounds();
                 for line_idx in start_line..=end_line {
-                    if line_idx < document.lines.len() {
+                    if line_idx < get_line_count(document) {
                         let line = &mut document.lines[line_idx];
                         if start_col <= line.len() {
                             line.insert_str(start_col, &indent);
@@ -315,7 +329,7 @@ impl VisualModeHandler {
             VisualMode::Line | VisualMode::Char => {
                 // Dedent entire lines
                 for line_idx in start_line..=end_line {
-                    if line_idx < document.lines.len() {
+                    if line_idx < get_line_count(document) {
                         let line = &mut document.lines[line_idx];
 
                         // Try to remove a tab first
@@ -336,7 +350,7 @@ impl VisualModeHandler {
                 // Block dedent - remove from the left column of the block
                 let (_, start_col, _, _) = selection.get_ordered_bounds();
                 for line_idx in start_line..=end_line {
-                    if line_idx < document.lines.len() {
+                    if line_idx < get_line_count(document) {
                         let line = &mut document.lines[line_idx];
                         if start_col < line.len() {
                             if line.chars().nth(start_col) == Some('\t') {

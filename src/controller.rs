@@ -1167,14 +1167,31 @@ impl Controller {
             }
             Command::DeleteLines(count) => {
                 for _ in 0..count {
-                    if self.current_document().lines.len() > 1 {
+                    let line_count = if self.current_document().use_piece_table {
+                        if let Some(ref text_buffer) = self.current_document().text_buffer {
+                            let mut text_buffer = text_buffer.clone();
+                            text_buffer.line_count()
+                        } else {
+                            0
+                        }
+                    } else {
+                        self.current_document().lines.len()
+                    };
+                    if line_count > 1 {
                         self.current_document_mut().delete_line();
                         // Adjust cursor if we deleted the last line
-                        if self.current_document().cursor_line
-                            >= self.current_document().lines.len()
-                        {
-                            self.current_document_mut().cursor_line =
-                                self.current_document().lines.len() - 1;
+                        let new_line_count = if self.current_document().use_piece_table {
+                            if let Some(ref text_buffer) = self.current_document().text_buffer {
+                                let mut text_buffer = text_buffer.clone();
+                                text_buffer.line_count()
+                            } else {
+                                0
+                            }
+                        } else {
+                            self.current_document().lines.len()
+                        };
+                        if self.current_document().cursor_line >= new_line_count {
+                            self.current_document_mut().cursor_line = new_line_count.saturating_sub(1);
                         }
                     } else {
                         break;
@@ -1252,14 +1269,31 @@ impl Controller {
             Command::ChangeLines(count) => {
                 let mut deleted_lines = Vec::new();
                 for _ in 0..count {
-                    if !self.current_document().lines.is_empty() {
+                    let is_empty = if self.current_document().use_piece_table {
+                        if let Some(ref text_buffer) = self.current_document().text_buffer {
+                            let mut text_buffer = text_buffer.clone();
+                            text_buffer.line_count() == 0
+                        } else {
+                            true
+                        }
+                    } else {
+                        self.current_document().lines.is_empty()
+                    };
+                    if !is_empty {
                         deleted_lines.push(self.current_document_mut().change_line());
                         // Adjust cursor if we're at the end
-                        if self.current_document().cursor_line
-                            >= self.current_document().lines.len()
-                        {
-                            self.current_document_mut().cursor_line =
-                                self.current_document().lines.len().saturating_sub(1);
+                        let line_count = if self.current_document().use_piece_table {
+                            if let Some(ref text_buffer) = self.current_document().text_buffer {
+                                let mut text_buffer = text_buffer.clone();
+                                text_buffer.line_count()
+                            } else {
+                                0
+                            }
+                        } else {
+                            self.current_document().lines.len()
+                        };
+                        if self.current_document().cursor_line >= line_count {
+                            self.current_document_mut().cursor_line = line_count.saturating_sub(1);
                         }
                     } else {
                         break;
@@ -1674,6 +1708,13 @@ impl Controller {
             }
         }
 
+        // Sync Vec<String> changes back to piece table after undo operations
+        if doc.use_piece_table {
+            if let Some(ref mut text_buffer) = doc.text_buffer {
+                text_buffer.from_lines_update(doc.lines.clone());
+            }
+        }
+        
         doc.modified = true;
     }
 

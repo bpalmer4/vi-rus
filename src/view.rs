@@ -249,7 +249,16 @@ impl View {
         // Calculate line number width and text offset
         let line_num_width = if self.show_line_numbers {
             // Calculate width needed for line numbers (based on total lines)
-            let total_lines = doc.lines.len();
+            let total_lines = if doc.use_piece_table {
+                if let Some(ref text_buffer) = doc.text_buffer {
+                    let mut text_buffer = text_buffer.clone();
+                    text_buffer.line_count()
+                } else {
+                    0
+                }
+            } else {
+                doc.lines.len()
+            };
             if total_lines == 0 {
                 4
             } else {

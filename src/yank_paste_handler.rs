@@ -1,5 +1,19 @@
 use crate::controller::Controller;
 use crate::document::Document;
+
+// Helper function to get line count efficiently
+fn get_line_count(document: &Document) -> usize {
+    if document.use_piece_table {
+        if let Some(ref text_buffer) = document.text_buffer {
+            let mut text_buffer = text_buffer.clone();
+            text_buffer.line_count()
+        } else {
+            0
+        }
+    } else {
+        document.lines.len()
+    }
+}
 use crate::registers::RegisterType;
 use crate::visual_mode::VisualModeHandler;
 
@@ -94,7 +108,7 @@ impl YankPasteHandler {
                 let mut lines = Vec::new();
                 for i in 0..*count {
                     let line_idx = document.cursor_line + i;
-                    if line_idx < document.lines.len() {
+                    if line_idx < get_line_count(document) {
                         lines.push(document.lines[line_idx].clone());
                     } else {
                         break;
@@ -171,7 +185,7 @@ impl YankPasteHandler {
     }
 
     fn paste_character_wise(document: &mut Document, content: &str, paste_type: &PasteType) {
-        if document.cursor_line < document.lines.len() {
+        if document.cursor_line < get_line_count(document) {
             let line = &mut document.lines[document.cursor_line];
             let mut insert_col = document.cursor_column;
 
