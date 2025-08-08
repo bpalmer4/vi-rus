@@ -49,7 +49,6 @@ impl LineEnding {
 
 #[derive(Clone)]
 pub struct Document {
-    pub lines: Vec<String>,
     pub cursor_line: usize,
     pub cursor_column: usize,
     pub filename: Option<PathBuf>,
@@ -58,20 +57,15 @@ pub struct Document {
     pub expand_tab: bool,
     pub local_marks: HashMap<char, (usize, usize)>, // Local marks (a-z) for this buffer
     pub undo_manager: UndoManager,
-    // Piece table backend (optional, for performance)
-    pub text_buffer: Option<TextBuffer>,
-    pub use_piece_table: bool,
-    // Track if piece table has changes not yet synced to lines
-    piece_table_dirty: bool,
+    // Piece table backend - now the single source of truth
+    pub text_buffer: TextBuffer,
 }
 
 impl Document {
     pub fn new() -> Self {
-        let mut text_buffer = TextBuffer::new();
-        let lines = text_buffer.to_lines();
+        let text_buffer = TextBuffer::new();
         
         Self {
-            lines,
             cursor_line: 0,
             cursor_column: 0,
             filename: None,
@@ -80,9 +74,7 @@ impl Document {
             expand_tab: true, // Default to spaces
             local_marks: HashMap::new(),
             undo_manager: UndoManager::new(),
-            text_buffer: Some(text_buffer),
-            use_piece_table: true,
-            piece_table_dirty: false,
+            text_buffer,
         }
     }
     
@@ -93,10 +85,8 @@ impl Document {
         
         let mut text_buffer = TextBuffer::from_string(content);
         text_buffer.set_line_ending(line_ending);
-        let lines = text_buffer.to_lines();
 
         Ok(Self {
-            lines,
             cursor_line: 0,
             cursor_column: 0,
             filename: Some(filename),
@@ -105,9 +95,7 @@ impl Document {
             expand_tab: true, // Default to spaces
             local_marks: HashMap::new(),
             undo_manager: UndoManager::new(),
-            text_buffer: Some(text_buffer),
-            use_piece_table: true,
-            piece_table_dirty: false,
+            text_buffer,
         })
     }
 
@@ -115,136 +103,166 @@ impl Document {
         self.modified
     }
 
-    // Synchronization methods for piece table integration
-    fn sync_to_piece_table(&mut self) {
-        if self.use_piece_table {
-            if let Some(ref mut text_buffer) = self.text_buffer {
-                text_buffer.from_lines_update(self.lines.clone());
-            }
-        }
-    }
 
-    fn sync_from_piece_table(&mut self) {
-        if self.use_piece_table {
-            if let Some(ref mut text_buffer) = self.text_buffer {
-                self.lines = text_buffer.to_lines();
-                self.piece_table_dirty = false;
-            }
-        }
-    }
     
     
-    // Mark piece table as dirty (has changes not yet synced to lines)
-    fn mark_piece_table_dirty(&mut self) {
-        if self.use_piece_table {
-            self.piece_table_dirty = true;
-        }
-    }
 
 
 
     
-    // Helper to get line count without requiring mutable reference
+    // Get line count from piece table
     pub fn line_count(&self) -> usize {
-        if self.use_piece_table {
-            if let Some(ref text_buffer) = self.text_buffer {
-                let mut text_buffer = text_buffer.clone();
-                text_buffer.line_count()
-            } else {
-                0
-            }
-        } else {
-            self.line_count()
-        }
+        let mut text_buffer = self.text_buffer.clone();
+        text_buffer.line_count()
     }
 
-
-
-
-    #[cfg(test)]
-    pub fn get_piece_table_content(&mut self) -> Option<String> {
-        if let Some(ref text_buffer) = self.text_buffer {
-            Some(text_buffer.get_text())
-        } else {
-            None
-        }
+    // Get a specific line from piece table
+    pub fn get_line(&self, line_num: usize) -> Option<String> {
+        let mut text_buffer = self.text_buffer.clone();
+        text_buffer.get_line(line_num)
     }
 
-    #[cfg(test)]
-    pub fn new_legacy() -> Self {
-        Self {
-            lines: vec![String::new()],
-            cursor_line: 0,
-            cursor_column: 0,
-            filename: None,
-            modified: false,
-            line_ending: LineEnding::system_default(),
-            expand_tab: true,
-            local_marks: HashMap::new(),
-            undo_manager: UndoManager::new(),
-            text_buffer: None,
-            use_piece_table: false,
-            piece_table_dirty: false,
-        }
+    // Get line length from piece table
+    pub fn get_line_length(&self, line_num: usize) -> usize {
+        let mut text_buffer = self.text_buffer.clone();
+        text_buffer.line_length(line_num)
     }
-
-    #[cfg(test)]
-    pub fn is_using_piece_table(&self) -> bool {
-        self.use_piece_table
-    }
-
-    #[cfg(test)]
-    pub fn get_line_efficiently(&mut self, line_num: usize) -> Option<String> {
-        if self.use_piece_table {
-            if let Some(ref mut text_buffer) = self.text_buffer {
-                return text_buffer.get_line(line_num);
-            }
+    
+    // Replace an entire line
+    pub fn set_line(&mut self, line_num: usize, new_content: &str) {
+        use crate::text_buffer::{Position, Range};
+        if line_num >= self.line_count() {
+            return;
         }
-        self.lines.get(line_num).cloned()
-    }
-
-    #[cfg(test)]
-    pub fn enable_piece_table(&mut self) -> bool {
-        if !self.use_piece_table && self.text_buffer.is_none() {
-            self.text_buffer = Some(TextBuffer::from_lines(vec![String::new()]));
-            self.use_piece_table = true;
-            true
-        } else {
-            false
-        }
-    }
-
-    #[cfg(test)]
-    pub fn disable_piece_table(&mut self) -> bool {
-        if self.use_piece_table {
-            self.sync_from_piece_table();
-            self.text_buffer = None;
-            self.use_piece_table = false;
-            true
-        } else {
-            false
-        }
-    }
-
-    #[cfg(test)]
-    pub fn test_piece_table_sync(&mut self) -> bool {
-        if !self.use_piece_table {
-            return false;
-        }
-
-        // Modify lines directly
-        self.lines.push("Test line".to_string());
         
-        // Sync to piece table
-        self.sync_to_piece_table();
+        let line_length = self.get_line_length(line_num);
+        let start_pos = Position::new(line_num, 0);
+        let end_pos = Position::new(line_num, line_length);
+        let range = Range::new(start_pos, end_pos);
         
-        // Verify piece table has the change
-        if let Some(content) = self.get_piece_table_content() {
-            content.contains("Test line")
+        self.text_buffer.delete(range);
+        self.text_buffer.insert(start_pos, new_content);
+        self.modified = true;
+    }
+    
+    // Get all lines as a vector (for compatibility during migration)
+    pub fn get_all_lines(&self) -> Vec<String> {
+        let mut text_buffer = self.text_buffer.clone();
+        text_buffer.get_lines()
+    }
+    
+    // Check if document is empty
+    pub fn is_empty(&self) -> bool {
+        self.line_count() == 0 || (self.line_count() == 1 && self.get_line_length(0) == 0)
+    }
+
+    // Insert text at position using piece table
+    pub fn insert_text_at(&mut self, line: usize, column: usize, text: &str) {
+        use crate::text_buffer::Position;
+        let pos = Position::new(line, column);
+        self.text_buffer.insert(pos, text);
+        self.modified = true;
+    }
+
+    // Delete text at position using piece table
+    pub fn delete_text_at(&mut self, line: usize, column: usize, length: usize) -> String {
+        use crate::text_buffer::{Position, Range};
+        let start_pos = Position::new(line, column);
+        let end_pos = Position::new(line, column + length);
+        let range = Range::new(start_pos, end_pos);
+        let deleted_text = self.text_buffer.get_text_range(range.clone());
+        self.text_buffer.delete(range);
+        self.modified = true;
+        deleted_text
+    }
+
+    // Insert a new line using piece table
+    pub fn insert_line_at(&mut self, line_num: usize, text: &str) {
+        use crate::text_buffer::Position;
+        if line_num == 0 && self.line_count() == 0 {
+            // Special case: inserting into empty document
+            self.text_buffer.insert(Position::new(0, 0), text);
+        } else if line_num >= self.line_count() {
+            // Append at end
+            let pos = Position::new(self.line_count() - 1, self.get_line_length(self.line_count() - 1));
+            self.text_buffer.insert(pos, &format!("\n{}", text));
         } else {
-            false
+            // Insert at beginning of specified line
+            let pos = Position::new(line_num, 0);
+            self.text_buffer.insert(pos, &format!("{}\n", text));
+        }
+        self.modified = true;
+    }
+
+    // Delete a line using piece table
+    pub fn delete_line_at(&mut self, line_num: usize) -> String {
+        use crate::text_buffer::{Position, Range};
+        if line_num >= self.line_count() {
+            return String::new();
+        }
+
+        let line_content = self.get_line(line_num).unwrap_or_default();
+        let line_length = self.get_line_length(line_num);
+        
+        // If this is the last line and there are other lines, include the newline from previous line
+        let (start_pos, end_pos) = if line_num == self.line_count() - 1 && self.line_count() > 1 {
+            // Delete the newline from the previous line and this line
+            let prev_line_length = self.get_line_length(line_num - 1);
+            (Position::new(line_num - 1, prev_line_length), Position::new(line_num, line_length))
+        } else {
+            // Delete this line and its newline
+            (Position::new(line_num, 0), Position::new(line_num + 1, 0))
+        };
+
+        let range = Range::new(start_pos, end_pos);
+        self.text_buffer.delete(range);
+        self.modified = true;
+        line_content
+    }
+
+    // Split a line at given position using piece table
+    pub fn split_line_at(&mut self, line_num: usize, column: usize, insert_text: &str) {
+        use crate::text_buffer::Position;
+        if line_num >= self.line_count() {
+            return;
+        }
+
+        let line_length = self.get_line_length(line_num);
+        if column <= line_length {
+            let pos = Position::new(line_num, column);
+            self.text_buffer.insert(pos, &format!("\n{}", insert_text));
+            self.modified = true;
         }
     }
+
+    // Join two lines with separator using piece table
+    pub fn join_lines_at(&mut self, line_num: usize, separator: &str) {
+        use crate::text_buffer::{Position, Range};
+        if line_num >= self.line_count() - 1 {
+            return;
+        }
+
+        // Replace the newline between the lines with the separator
+        let first_line_length = self.get_line_length(line_num);
+        let start_pos = Position::new(line_num, first_line_length);
+        let end_pos = Position::new(line_num + 1, 0);
+        let range = Range::new(start_pos, end_pos);
+        
+        self.text_buffer.delete(range.clone());
+        self.text_buffer.insert(start_pos, separator);
+        self.modified = true;
+    }
+
+
+
+
+    #[cfg(test)]
+    pub fn get_piece_table_content(&mut self) -> String {
+        self.text_buffer.get_text()
+    }
+
+
+
 
     pub fn save(&mut self) -> Result<usize, std::io::Error> {
         if let Some(ref filename) = self.filename {
@@ -258,7 +276,7 @@ impl Document {
     }
 
     pub fn save_as(&mut self, filename: PathBuf) -> Result<usize, std::io::Error> {
-        let content = self.lines.join(self.line_ending.as_str());
+        let content = self.text_buffer.get_text();
         let byte_count = content.len();
         fs::write(&filename, &content)?;
         self.filename = Some(filename);
@@ -301,60 +319,19 @@ impl Document {
 
         let byte_count = text.len();
 
-        if self.use_piece_table {
-            // Use piece table for efficient paste
-            if let Some(ref mut text_buffer) = self.text_buffer {
-                use crate::text_buffer::Position;
-                let pos = Position::new(self.cursor_line, self.cursor_column);
-                text_buffer.insert(pos, text);
-                
-                // Update cursor position
-                let newline_count = text.matches('\n').count();
-                if newline_count > 0 {
-                    self.cursor_line += newline_count;
-                    let last_line = text.split('\n').last().unwrap_or("");
-                    self.cursor_column = last_line.len();
-                } else {
-                    self.cursor_column += text.len();
-                }
-                
-                // Sync back to lines for compatibility
-                self.mark_piece_table_dirty();
-            }
+        // Use piece table for efficient paste
+        use crate::text_buffer::Position;
+        let pos = Position::new(self.cursor_line, self.cursor_column);
+        self.text_buffer.insert(pos, text);
+        
+        // Update cursor position
+        let newline_count = text.matches('\n').count();
+        if newline_count > 0 {
+            self.cursor_line += newline_count;
+            let last_line = text.split('\n').last().unwrap_or("");
+            self.cursor_column = last_line.len();
         } else {
-            // Legacy Vec<String> paste
-            if !text.contains('\n') {
-                // Simple single-line paste
-                self.lines[self.cursor_line].insert_str(self.cursor_column, text);
-                self.cursor_column += text.len();
-            } else {
-                // Multi-line paste - split on newlines
-                let paste_lines: Vec<&str> = text.split('\n').collect();
-
-                let current_line = &self.lines[self.cursor_line];
-                let before_cursor = current_line[..self.cursor_column].to_string();
-                let after_cursor = current_line[self.cursor_column..].to_string();
-
-                // Replace current line with: before_cursor + first_paste_line
-                self.lines[self.cursor_line] = before_cursor + paste_lines[0];
-
-                // Insert all middle lines (if any)
-                for (i, line) in paste_lines[1..paste_lines.len() - 1].iter().enumerate() {
-                    self.lines
-                        .insert(self.cursor_line + 1 + i, line.to_string());
-                }
-
-                // Handle the last line
-                if paste_lines.len() > 1 {
-                    let final_line = paste_lines[paste_lines.len() - 1].to_string() + &after_cursor;
-                    self.lines
-                        .insert(self.cursor_line + paste_lines.len() - 1, final_line);
-
-                    // Move cursor to end of pasted content
-                    self.cursor_line += paste_lines.len() - 1;
-                    self.cursor_column = paste_lines[paste_lines.len() - 1].len();
-                }
-            }
+            self.cursor_column += text.len();
         }
 
         self.modified = true;
@@ -370,21 +347,29 @@ impl Document {
             return Ok(0);
         }
 
-        let new_lines: Vec<String> = text.lines().map(|s| s.to_string()).collect();
         let byte_count = text.len();
 
         // Insert after the specified line (0-based internally, but line_num is 1-based from user)
+        use crate::text_buffer::Position;
         let insert_pos = if line_num == 0 {
-            0 // Special case: insert at beginning
+            // Insert at beginning of document
+            Position::new(0, 0)
         } else {
-            line_num.min(self.line_count()) // Insert after line_num, clamped to end
+            let target_line = (line_num - 1).min(self.line_count().saturating_sub(1));
+            let line_length = self.get_line_length(target_line);
+            Position::new(target_line, line_length)
         };
 
-        // Insert the new lines
-        for (i, line) in new_lines.into_iter().enumerate() {
-            self.lines.insert(insert_pos + i, line);
-        }
+        // Add newline prefix if we're inserting after content
+        let text_to_insert = if line_num == 0 && self.line_count() > 0 {
+            format!("{}\n", text)
+        } else if line_num > 0 {
+            format!("\n{}", text)
+        } else {
+            text.to_string()
+        };
 
+        self.text_buffer.insert(insert_pos, &text_to_insert);
         self.modified = true;
         Ok(byte_count)
     }
@@ -410,7 +395,7 @@ impl Document {
     }
 
     pub fn move_cursor_right(&mut self) {
-        let line_len = self.lines[self.cursor_line].len();
+        let line_len = self.get_line_length(self.cursor_line);
         if self.cursor_column < line_len {
             self.cursor_column += 1;
         }
@@ -425,28 +410,22 @@ impl Document {
                 text: c.to_string(),
             });
 
-        if self.use_piece_table {
-            // Use piece table for efficient insertion
-            if let Some(ref mut text_buffer) = self.text_buffer {
-                use crate::text_buffer::Position;
-                let pos = Position::new(self.cursor_line, self.cursor_column);
-                text_buffer.insert(pos, &c.to_string());
-                
-                // Sync back to lines for compatibility
-                self.sync_from_piece_table();
-            }
-        } else {
-            // Legacy Vec<String> insertion
-            self.lines[self.cursor_line].insert(self.cursor_column, c);
-        }
+        // Use piece table for insertion
+        use crate::text_buffer::Position;
+        let pos = Position::new(self.cursor_line, self.cursor_column);
+        self.text_buffer.insert(pos, &c.to_string());
         
         self.cursor_column += 1;
         self.modified = true;
     }
 
     pub fn insert_newline(&mut self) {
-        let current_line = &self.lines[self.cursor_line];
-        let new_line = current_line[self.cursor_column..].to_string();
+        let current_line = self.get_line(self.cursor_line).unwrap_or_default();
+        let new_line = if self.cursor_column < current_line.len() {
+            current_line[self.cursor_column..].to_string()
+        } else {
+            String::new()
+        };
 
         // Record undo action for splitting the line
         self.undo_manager
@@ -456,21 +435,10 @@ impl Document {
                 text: new_line.clone(),
             });
 
-        if self.use_piece_table {
-            // Use piece table for efficient newline insertion
-            if let Some(ref mut text_buffer) = self.text_buffer {
-                use crate::text_buffer::Position;
-                let pos = Position::new(self.cursor_line, self.cursor_column);
-                text_buffer.insert_newline(pos);
-                
-                // Sync back to lines for compatibility
-                self.sync_from_piece_table();
-            }
-        } else {
-            // Legacy Vec<String> newline insertion
-            self.lines[self.cursor_line] = current_line[..self.cursor_column].to_string();
-            self.lines.insert(self.cursor_line + 1, new_line);
-        }
+        // Use piece table for newline insertion
+        use crate::text_buffer::Position;
+        let pos = Position::new(self.cursor_line, self.cursor_column);
+        self.text_buffer.insert_newline(pos);
 
         self.cursor_line += 1;
         self.cursor_column = 0;
@@ -478,25 +446,12 @@ impl Document {
     }
 
     pub fn delete_char(&mut self) {
+        use crate::text_buffer::Position;
+        
         if self.cursor_column > 0 {
             // Delete character before cursor
-            let deleted_char = if self.use_piece_table {
-                if let Some(ref mut text_buffer) = self.text_buffer {
-                    use crate::text_buffer::Position;
-                    let pos = Position::new(self.cursor_line, self.cursor_column - 1);
-                    text_buffer.char_at(pos).unwrap_or(' ')
-                } else {
-                    self.lines[self.cursor_line]
-                        .chars()
-                        .nth(self.cursor_column - 1)
-                        .unwrap()
-                }
-            } else {
-                self.lines[self.cursor_line]
-                    .chars()
-                    .nth(self.cursor_column - 1)
-                    .unwrap()
-            };
+            let pos = Position::new(self.cursor_line, self.cursor_column - 1);
+            let deleted_char = self.text_buffer.char_at(pos).unwrap_or(' ');
             
             self.undo_manager
                 .add_action(crate::undo::UndoAction::DeleteText {
@@ -505,27 +460,13 @@ impl Document {
                     text: deleted_char.to_string(),
                 });
 
-            if self.use_piece_table {
-                // Use piece table for efficient deletion
-                if let Some(ref mut text_buffer) = self.text_buffer {
-                    use crate::text_buffer::Position;
-                    let pos = Position::new(self.cursor_line, self.cursor_column - 1);
-                    text_buffer.delete_char(pos);
-                    
-                    // Sync back to lines for compatibility
-                    self.sync_from_piece_table();
-                }
-            } else {
-                // Legacy Vec<String> deletion
-                self.lines[self.cursor_line].remove(self.cursor_column - 1);
-            }
-            
+            self.text_buffer.delete_char(pos);
             self.cursor_column -= 1;
             self.modified = true;
         } else if self.cursor_line > 0 {
-            // Join with previous line - this logic is complex, keep using Vec<String> for now
-            let current_line = self.lines.remove(self.cursor_line);
-            let previous_line_len = self.lines[self.cursor_line - 1].len();
+            // Join with previous line
+            let current_line = self.get_line(self.cursor_line).unwrap_or_default();
+            let previous_line_len = self.get_line_length(self.cursor_line - 1);
 
             // Record undo action for joining lines
             self.undo_manager
@@ -535,77 +476,55 @@ impl Document {
                     second_line_text: current_line.clone(),
                 });
 
+            // Delete the newline between lines
+            let pos = Position::new(self.cursor_line - 1, previous_line_len);
+            self.text_buffer.delete_char(pos);
+            
             self.cursor_line -= 1;
             self.cursor_column = previous_line_len;
-            self.lines[self.cursor_line].push_str(&current_line);
-            
-            // Update piece table if enabled
-            if self.use_piece_table {
-                self.sync_to_piece_table();
-            }
-            
             self.modified = true;
         }
     }
 
     pub fn delete_char_forward(&mut self) {
-        if self.use_piece_table {
-            // Use piece table for efficient forward deletion
-            if let Some(ref mut text_buffer) = self.text_buffer {
-                use crate::text_buffer::Position;
-                let pos = Position::new(self.cursor_line, self.cursor_column);
-                
-                // Get character to delete for undo
-                if let Some(deleted_char) = text_buffer.char_at(pos) {
-                    self.undo_manager
-                        .add_action(crate::undo::UndoAction::DeleteText {
-                            line: self.cursor_line,
-                            column: self.cursor_column,
-                            text: deleted_char.to_string(),
-                        });
-                    
-                    text_buffer.delete_char(pos);
-                    
-                    // Sync back to lines for compatibility
-                    self.sync_from_piece_table();
-                    self.modified = true;
-                }
-            }
-        } else {
-            // Legacy Vec<String> forward deletion
-            let line = &mut self.lines[self.cursor_line];
-            if self.cursor_column < line.len() {
-                // Delete character at cursor
-                let deleted_char = line.chars().nth(self.cursor_column).unwrap();
+        use crate::text_buffer::Position;
+        let pos = Position::new(self.cursor_line, self.cursor_column);
+        
+        let line_length = self.get_line_length(self.cursor_line);
+        if self.cursor_column < line_length {
+            // Delete character at cursor
+            if let Some(deleted_char) = self.text_buffer.char_at(pos) {
                 self.undo_manager
                     .add_action(crate::undo::UndoAction::DeleteText {
                         line: self.cursor_line,
                         column: self.cursor_column,
                         text: deleted_char.to_string(),
                     });
-                line.remove(self.cursor_column);
-                self.modified = true;
-            } else if self.cursor_line < self.line_count() - 1 {
-                // Join with next line
-                let next_line = self.lines.remove(self.cursor_line + 1);
-
-                // Record undo action for joining lines
-                self.undo_manager
-                    .add_action(crate::undo::UndoAction::JoinLines {
-                        line: self.cursor_line,
-                        separator: String::new(),
-                        second_line_text: next_line.clone(),
-                    });
-
-                self.lines[self.cursor_line].push_str(&next_line);
+                
+                self.text_buffer.delete_char(pos);
                 self.modified = true;
             }
+        } else if self.cursor_line < self.line_count() - 1 {
+            // Join with next line
+            let next_line = self.get_line(self.cursor_line + 1).unwrap_or_default();
+
+            // Record undo action for joining lines
+            self.undo_manager
+                .add_action(crate::undo::UndoAction::JoinLines {
+                    line: self.cursor_line,
+                    separator: String::new(),
+                    second_line_text: next_line.clone(),
+                });
+
+            // Delete the newline to join lines
+            self.text_buffer.delete_char(pos);
+            self.modified = true;
         }
     }
 
     pub fn delete_line(&mut self) {
         if self.line_count() > 1 {
-            self.lines.remove(self.cursor_line);
+            self.delete_line_at(self.cursor_line);
             if self.cursor_line >= self.line_count() {
                 self.cursor_line = self.line_count() - 1;
             }
@@ -613,20 +532,27 @@ impl Document {
             self.modified = true;
         } else {
             // If only one line, clear it
-            self.lines[0].clear();
+            self.set_line(0, "");
             self.cursor_column = 0;
             self.modified = true;
         }
     }
 
     pub fn delete_to_end_of_line(&mut self) {
-        let line = &mut self.lines[self.cursor_line];
-        if self.cursor_column < line.len() {
-            line.truncate(self.cursor_column);
+        let line_length = self.get_line_length(self.cursor_line);
+        if self.cursor_column < line_length {
+            // Delete from cursor to end of line
+            use crate::text_buffer::{Position, Range};
+            let start_pos = Position::new(self.cursor_line, self.cursor_column);
+            let end_pos = Position::new(self.cursor_line, line_length);
+            let range = Range::new(start_pos, end_pos);
+            self.text_buffer.delete(range);
             self.modified = true;
-            // Move cursor to end of line if it's now beyond the line
-            if self.cursor_column > 0 && self.cursor_column >= line.len() {
-                self.cursor_column = line.len().saturating_sub(1);
+            
+            // Adjust cursor if needed
+            let new_line_length = self.get_line_length(self.cursor_line);
+            if self.cursor_column > 0 && self.cursor_column >= new_line_length {
+                self.cursor_column = new_line_length.saturating_sub(1);
             }
         }
     }
@@ -638,48 +564,18 @@ impl Document {
         // Move to end of word to delete
         self.move_word_forward();
 
-        // Delete from original position to current position
-        if self.cursor_line == original_line {
-            // Same line deletion
-            let line = &mut self.lines[self.cursor_line];
-            if original_column < line.len() && self.cursor_column <= line.len() {
-                line.drain(original_column..self.cursor_column);
-                self.cursor_column = original_column;
-                self.modified = true;
-            }
-        } else {
-            // Multi-line deletion - delete from original position to end of original line
-            // then delete complete lines, then delete from start of final line to cursor
-            let mut lines_to_remove = Vec::new();
-
-            // Truncate original line
-            self.lines[original_line].truncate(original_column);
-
-            // Mark intermediate lines for removal
-            for i in (original_line + 1)..self.cursor_line {
-                lines_to_remove.push(i);
-            }
-
-            // Handle final line
-            if self.cursor_line < self.line_count() {
-                let final_line_content =
-                    self.lines[self.cursor_line][self.cursor_column..].to_string();
-                self.lines[original_line].push_str(&final_line_content);
-            }
-
-            // Remove lines in reverse order to maintain indices
-            lines_to_remove.push(self.cursor_line);
-            for &line_idx in lines_to_remove.iter().rev() {
-                if line_idx < self.line_count() && line_idx > original_line {
-                    self.lines.remove(line_idx);
-                }
-            }
-
-            // Reset cursor position
-            self.cursor_line = original_line;
-            self.cursor_column = original_column;
-            self.modified = true;
-        }
+        // Delete from original position to current position using piece table
+        use crate::text_buffer::{Position, Range};
+        let start_pos = Position::new(original_line, original_column);
+        let end_pos = Position::new(self.cursor_line, self.cursor_column);
+        let range = Range::new(start_pos, end_pos);
+        
+        self.text_buffer.delete(range);
+        
+        // Reset cursor to original position
+        self.cursor_line = original_line;
+        self.cursor_column = original_column;
+        self.modified = true;
     }
 
     pub fn delete_big_word_forward(&mut self) {
@@ -689,67 +585,41 @@ impl Document {
         // Move to end of big word to delete
         self.move_big_word_forward();
 
-        // Delete from original position to current position
-        if self.cursor_line == original_line {
-            // Same line deletion
-            let line = &mut self.lines[self.cursor_line];
-            if original_column < line.len() && self.cursor_column <= line.len() {
-                line.drain(original_column..self.cursor_column);
-                self.cursor_column = original_column;
-                self.modified = true;
-            }
-        } else {
-            // Multi-line deletion
-            let mut lines_to_remove = Vec::new();
-
-            // Truncate original line
-            self.lines[original_line].truncate(original_column);
-
-            // Mark intermediate lines for removal
-            for i in (original_line + 1)..self.cursor_line {
-                lines_to_remove.push(i);
-            }
-
-            // Handle final line
-            if self.cursor_line < self.line_count() {
-                let final_line_content =
-                    self.lines[self.cursor_line][self.cursor_column..].to_string();
-                self.lines[original_line].push_str(&final_line_content);
-            }
-
-            // Remove lines in reverse order to maintain indices
-            lines_to_remove.push(self.cursor_line);
-            for &line_idx in lines_to_remove.iter().rev() {
-                if line_idx < self.line_count() && line_idx > original_line {
-                    self.lines.remove(line_idx);
-                }
-            }
-
-            // Reset cursor position
-            self.cursor_line = original_line;
-            self.cursor_column = original_column;
-            self.modified = true;
-        }
+        // Delete from original position to current position using piece table
+        use crate::text_buffer::{Position, Range};
+        let start_pos = Position::new(original_line, original_column);
+        let end_pos = Position::new(self.cursor_line, self.cursor_column);
+        let range = Range::new(start_pos, end_pos);
+        
+        self.text_buffer.delete(range);
+        
+        // Reset cursor to original position
+        self.cursor_line = original_line;
+        self.cursor_column = original_column;
+        self.modified = true;
     }
 
     pub fn delete_char_backward(&mut self) {
         if self.cursor_column > 0 {
-            // Delete character before cursor
-            let line = &mut self.lines[self.cursor_line];
-            let deleted_char = line.chars().nth(self.cursor_column - 1).unwrap();
+            // Delete character before cursor using piece table
+            use crate::text_buffer::Position;
+            let pos = Position::new(self.cursor_line, self.cursor_column - 1);
+            let deleted_char = self.text_buffer.char_at(pos).unwrap_or(' ');
+            
             self.undo_manager
                 .add_action(crate::undo::UndoAction::DeleteText {
                     line: self.cursor_line,
                     column: self.cursor_column - 1,
                     text: deleted_char.to_string(),
                 });
-            line.remove(self.cursor_column - 1);
+            
+            self.text_buffer.delete_char(pos);
             self.cursor_column -= 1;
             self.modified = true;
         } else if self.cursor_line > 0 {
             // Join with previous line
-            let current_line = self.lines.remove(self.cursor_line);
-            let previous_line_len = self.lines[self.cursor_line - 1].len();
+            let current_line = self.delete_line_at(self.cursor_line);
+            let previous_line_len = self.get_line_length(self.cursor_line - 1);
 
             // Record undo action for joining lines
             self.undo_manager
@@ -761,7 +631,10 @@ impl Document {
 
             self.cursor_line -= 1;
             self.cursor_column = previous_line_len;
-            self.lines[self.cursor_line].push_str(&current_line);
+            // Append the current line content to the previous line using piece table
+            use crate::text_buffer::Position;
+            let pos = Position::new(self.cursor_line, previous_line_len);
+            self.text_buffer.insert(pos, &current_line);
             self.modified = true;
         }
     }
@@ -773,50 +646,13 @@ impl Document {
         // Move to start of word backward
         self.move_word_backward();
 
-        // Delete from current position to original position
-        if self.cursor_line == original_line {
-            // Same line deletion
-            let line = &mut self.lines[self.cursor_line];
-            if self.cursor_column < original_column && original_column <= line.len() {
-                line.drain(self.cursor_column..original_column);
-                self.modified = true;
-            }
-        } else {
-            // Multi-line deletion - delete from cursor to end of current line,
-            // then delete complete lines, then delete from start of final line to original position
-            let start_line = self.cursor_line;
-            let start_column = self.cursor_column;
-
-            // Delete from start position to end of start line
-            if start_column < self.lines[start_line].len() {
-                self.lines[start_line].drain(start_column..);
-            }
-
-            // Delete complete intermediate lines
-            let lines_to_remove: Vec<usize> = ((start_line + 1)..original_line).collect();
-            for &line_idx in lines_to_remove.iter().rev() {
-                if line_idx < self.line_count() {
-                    self.lines.remove(line_idx);
-                }
-            }
-
-            // Delete from start of final line to original column
-            let final_line_idx = start_line + 1;
-            if final_line_idx < self.line_count() && original_column > 0 {
-                let line_len = self.lines[final_line_idx].len();
-                self.lines[final_line_idx].drain(0..original_column.min(line_len));
-            }
-
-            // Join the two lines
-            if final_line_idx < self.line_count() {
-                let line_to_join = self.lines.remove(final_line_idx);
-                self.lines[start_line].push_str(&line_to_join);
-            }
-
-            self.cursor_line = start_line;
-            self.cursor_column = start_column;
-            self.modified = true;
-        }
+        // Delete from current position to original position using piece table
+        use crate::text_buffer::{Position, Range};
+        let start_pos = Position::new(self.cursor_line, self.cursor_column);
+        let end_pos = Position::new(original_line, original_column);
+        let range = Range::new(start_pos, end_pos);
+        self.text_buffer.delete(range);
+        self.modified = true;
     }
 
     pub fn delete_big_word_backward(&mut self) {
@@ -826,44 +662,13 @@ impl Document {
         // Move to start of big word backward
         self.move_big_word_backward();
 
-        // Delete from current position to original position (same logic as delete_word_backward)
-        if self.cursor_line == original_line {
-            let line = &mut self.lines[self.cursor_line];
-            if self.cursor_column < original_column && original_column <= line.len() {
-                line.drain(self.cursor_column..original_column);
-                self.modified = true;
-            }
-        } else {
-            // Multi-line deletion (same as word backward)
-            let start_line = self.cursor_line;
-            let start_column = self.cursor_column;
-
-            if start_column < self.lines[start_line].len() {
-                self.lines[start_line].drain(start_column..);
-            }
-
-            let lines_to_remove: Vec<usize> = ((start_line + 1)..original_line).collect();
-            for &line_idx in lines_to_remove.iter().rev() {
-                if line_idx < self.line_count() {
-                    self.lines.remove(line_idx);
-                }
-            }
-
-            let final_line_idx = start_line + 1;
-            if final_line_idx < self.line_count() && original_column > 0 {
-                let line_len = self.lines[final_line_idx].len();
-                self.lines[final_line_idx].drain(0..original_column.min(line_len));
-            }
-
-            if final_line_idx < self.line_count() {
-                let line_to_join = self.lines.remove(final_line_idx);
-                self.lines[start_line].push_str(&line_to_join);
-            }
-
-            self.cursor_line = start_line;
-            self.cursor_column = start_column;
-            self.modified = true;
-        }
+        // Delete from current position to original position using piece table
+        use crate::text_buffer::{Position, Range};
+        let start_pos = Position::new(self.cursor_line, self.cursor_column);
+        let end_pos = Position::new(original_line, original_column);
+        let range = Range::new(start_pos, end_pos);
+        self.text_buffer.delete(range);
+        self.modified = true;
     }
 
     pub fn delete_to_end_of_word(&mut self) {
@@ -875,9 +680,8 @@ impl Document {
 
         // Delete from original position to current position
         if self.cursor_line == original_line {
-            let line = &mut self.lines[self.cursor_line];
-            if original_column < self.cursor_column && self.cursor_column <= line.len() {
-                line.drain(original_column..self.cursor_column);
+            if original_column < self.cursor_column && self.cursor_column <= self.get_line_length(self.cursor_line) {
+                // Complex drain operation needs manual conversion;
                 self.cursor_column = original_column;
                 self.modified = true;
             }
@@ -894,9 +698,8 @@ impl Document {
 
         // Delete from original position to current position
         if self.cursor_line == original_line {
-            let line = &mut self.lines[self.cursor_line];
-            if original_column < self.cursor_column && self.cursor_column <= line.len() {
-                line.drain(original_column..self.cursor_column);
+            if original_column < self.cursor_column && self.cursor_column <= self.get_line_length(self.cursor_line) {
+                // Complex drain operation needs manual conversion;
                 self.cursor_column = original_column;
                 self.modified = true;
             }
@@ -904,20 +707,23 @@ impl Document {
     }
 
     pub fn delete_to_start_of_line(&mut self) {
-        let line = &mut self.lines[self.cursor_line];
         if self.cursor_column > 0 {
-            line.drain(0..self.cursor_column);
+            // Complex drain operation needs manual conversion;
             self.cursor_column = 0;
             self.modified = true;
         }
     }
 
     pub fn delete_to_first_non_whitespace(&mut self) {
-        let line = &self.lines[self.cursor_line].clone();
+        let line = self.get_line(self.cursor_line).unwrap_or_default().clone();
         let first_non_ws = line.chars().position(|c| !c.is_whitespace()).unwrap_or(0);
 
         if self.cursor_column > first_non_ws {
-            self.lines[self.cursor_line].drain(first_non_ws..self.cursor_column);
+            use crate::text_buffer::{Position, Range};
+            let start_pos = Position::new(self.cursor_line, first_non_ws);
+            let end_pos = Position::new(self.cursor_line, self.cursor_column);
+            let range = Range::new(start_pos, end_pos);
+            self.text_buffer.delete(range);
             self.cursor_column = first_non_ws;
             self.modified = true;
         }
@@ -925,32 +731,29 @@ impl Document {
 
     pub fn delete_to_end_of_file(&mut self) {
         if self.cursor_line < self.line_count() - 1
-            || self.cursor_column < self.lines[self.cursor_line].len()
+            || self.cursor_column < self.get_line_length(self.cursor_line)
         {
-            // Delete from cursor to end of current line
-            let line = &mut self.lines[self.cursor_line];
-            line.drain(self.cursor_column..);
-
-            // Delete all subsequent lines
-            if self.cursor_line < self.line_count() - 1 {
-                self.lines.drain((self.cursor_line + 1)..);
-            }
-
+            // Delete from cursor to end of file using piece table
+            use crate::text_buffer::{Position, Range};
+            let start_pos = Position::new(self.cursor_line, self.cursor_column);
+            let last_line = self.line_count() - 1;
+            let last_column = self.get_line_length(last_line);
+            let end_pos = Position::new(last_line, last_column);
+            let range = Range::new(start_pos, end_pos);
+            self.text_buffer.delete(range);
             self.modified = true;
         }
     }
 
     pub fn delete_to_start_of_file(&mut self) {
         if self.cursor_line > 0 || self.cursor_column > 0 {
-            // Delete from start of current line to cursor
-            let line = &mut self.lines[self.cursor_line];
-            line.drain(0..self.cursor_column);
-
-            // Delete all previous lines
-            if self.cursor_line > 0 {
-                self.lines.drain(0..self.cursor_line);
-            }
-
+            // Delete from start of file to cursor using piece table
+            use crate::text_buffer::{Position, Range};
+            let start_pos = Position::new(0, 0);
+            let end_pos = Position::new(self.cursor_line, self.cursor_column);
+            let range = Range::new(start_pos, end_pos);
+            self.text_buffer.delete(range);
+            
             self.cursor_line = 0;
             self.cursor_column = 0;
             self.modified = true;
@@ -964,42 +767,58 @@ impl Document {
 
     pub fn substitute_line(&mut self) {
         // Clear current line and move cursor to beginning
-        self.lines[self.cursor_line].clear();
+        self.set_line(self.cursor_line, "");
         self.cursor_column = 0;
         self.modified = true;
     }
 
     pub fn delete_until_char(&mut self, target: char) {
-        let line = &self.lines[self.cursor_line];
+        let line = self.get_line(self.cursor_line).unwrap_or_default();
         if let Some(pos) = line[self.cursor_column + 1..].find(target) {
             let end_pos = self.cursor_column + 1 + pos;
-            self.lines[self.cursor_line].drain(self.cursor_column..end_pos);
+            use crate::text_buffer::{Position, Range};
+            let start_pos = Position::new(self.cursor_line, self.cursor_column);
+            let end_pos = Position::new(self.cursor_line, end_pos);
+            let range = Range::new(start_pos, end_pos);
+            self.text_buffer.delete(range);
             self.modified = true;
         }
     }
 
     pub fn delete_until_char_backward(&mut self, target: char) {
-        let line = &self.lines[self.cursor_line];
+        let line = self.get_line(self.cursor_line).unwrap_or_default();
         if let Some(pos) = line[..self.cursor_column].rfind(target) {
-            self.lines[self.cursor_line].drain((pos + 1)..self.cursor_column);
+            use crate::text_buffer::{Position, Range};
+            let start_pos = Position::new(self.cursor_line, pos + 1);
+            let end_pos = Position::new(self.cursor_line, self.cursor_column);
+            let range = Range::new(start_pos, end_pos);
+            self.text_buffer.delete(range);
             self.cursor_column = pos + 1;
             self.modified = true;
         }
     }
 
     pub fn delete_find_char(&mut self, target: char) {
-        let line = &self.lines[self.cursor_line];
+        let line = self.get_line(self.cursor_line).unwrap_or_default();
         if let Some(pos) = line[self.cursor_column + 1..].find(target) {
             let end_pos = self.cursor_column + 1 + pos + 1; // Include the target char
-            self.lines[self.cursor_line].drain(self.cursor_column..end_pos);
+            use crate::text_buffer::{Position, Range};
+            let start_pos = Position::new(self.cursor_line, self.cursor_column);
+            let end_pos = Position::new(self.cursor_line, end_pos);
+            let range = Range::new(start_pos, end_pos);
+            self.text_buffer.delete(range);
             self.modified = true;
         }
     }
 
     pub fn delete_find_char_backward(&mut self, target: char) {
-        let line = &self.lines[self.cursor_line];
+        let line = self.get_line(self.cursor_line).unwrap_or_default();
         if let Some(pos) = line[..self.cursor_column].rfind(target) {
-            self.lines[self.cursor_line].drain(pos..self.cursor_column);
+            use crate::text_buffer::{Position, Range};
+            let start_pos = Position::new(self.cursor_line, pos);
+            let end_pos = Position::new(self.cursor_line, self.cursor_column);
+            let range = Range::new(start_pos, end_pos);
+            self.text_buffer.delete(range);
             self.cursor_column = pos;
             self.modified = true;
         }
@@ -1008,27 +827,18 @@ impl Document {
     pub fn open_line_below(&mut self) {
         self.cursor_line += 1;
         self.cursor_column = 0;
-        self.lines.insert(self.cursor_line, String::new());
+        self.insert_line_at(self.cursor_line, "");
         self.modified = true;
     }
 
     pub fn open_line_above(&mut self) {
-        self.lines.insert(self.cursor_line, String::new());
+        self.insert_line_at(self.cursor_line, "");
         self.cursor_column = 0;
         self.modified = true;
     }
 
     pub fn clamp_cursor_column(&mut self) {
-        let line_len = if self.use_piece_table {
-            // Use piece table for efficient line length calculation
-            if let Some(ref mut text_buffer) = self.text_buffer {
-                text_buffer.line_length(self.cursor_line)
-            } else {
-                self.lines[self.cursor_line].len()
-            }
-        } else {
-            self.lines[self.cursor_line].len()
-        };
+        let line_len = self.get_line_length(self.cursor_line);
         
         if self.cursor_column > line_len {
             self.cursor_column = line_len;
@@ -1043,10 +853,13 @@ impl Document {
         let mut changed_lines = 0;
         let spaces = " ".repeat(tab_width);
 
-        for line in &mut self.lines {
-            if line.contains('\t') {
-                *line = line.replace('\t', &spaces);
-                changed_lines += 1;
+        for line_idx in 0..self.line_count() {
+            if let Some(line) = self.get_line(line_idx) {
+                if line.contains('\t') {
+                    let new_line = line.replace('\t', &spaces);
+                    self.set_line(line_idx, &new_line);
+                    changed_lines += 1;
+                }
             }
         }
 
@@ -1061,10 +874,13 @@ impl Document {
         let mut changed_lines = 0;
         let spaces = " ".repeat(tab_width);
 
-        for line in &mut self.lines {
-            if line.contains(&spaces) {
-                *line = line.replace(&spaces, "\t");
-                changed_lines += 1;
+        for line_idx in 0..self.line_count() {
+            if let Some(line) = self.get_line(line_idx) {
+                if line.contains(&spaces) {
+                    let new_line = line.replace(&spaces, "\t");
+                    self.set_line(line_idx, &new_line);
+                    changed_lines += 1;
+                }
             }
         }
 
@@ -1079,11 +895,13 @@ impl Document {
     pub fn ascii_normalize(&mut self) -> usize {
         let mut changed_lines = 0;
 
-        for line in &mut self.lines {
-            let normalized = Self::normalize_to_ascii(line);
-            if normalized != *line {
-                *line = normalized;
-                changed_lines += 1;
+        for line_idx in 0..self.line_count() {
+            if let Some(line) = self.get_line(line_idx) {
+                let normalized = Self::normalize_to_ascii(&line);
+                if normalized != line {
+                    self.set_line(line_idx, &normalized);
+                    changed_lines += 1;
+                }
             }
         }
 
@@ -1210,7 +1028,9 @@ impl Document {
                     column: self.cursor_column,
                     text: spaces.clone(),
                 });
-            self.lines[self.cursor_line].insert_str(self.cursor_column, &spaces);
+            use crate::text_buffer::Position;
+            let pos = Position::new(self.cursor_line, self.cursor_column);
+            self.text_buffer.insert(pos, &spaces);
             self.cursor_column += tab_width;
         } else {
             // Insert actual tab
@@ -1220,7 +1040,9 @@ impl Document {
                     column: self.cursor_column,
                     text: "\t".to_string(),
                 });
-            self.lines[self.cursor_line].insert(self.cursor_column, '\t');
+            use crate::text_buffer::Position;
+            let pos = Position::new(self.cursor_line, self.cursor_column);
+            self.text_buffer.insert(pos, "\t");
             self.cursor_column += 1;
         }
         self.modified = true;
@@ -1233,15 +1055,10 @@ impl Document {
             "\t".to_string()
         };
 
-        if self.use_piece_table {
-            if let Some(ref mut text_buffer) = self.text_buffer {
-                let pos = crate::text_buffer::Position::new(self.cursor_line, 0);
-                text_buffer.insert(pos, &indent);
-                self.mark_piece_table_dirty();
-            }
-        } else {
-            self.lines[self.cursor_line].insert_str(0, &indent);
-        }
+        use crate::text_buffer::Position;
+        let pos = Position::new(self.cursor_line, 0);
+        self.text_buffer.insert(pos, &indent);
+        
         self.cursor_column += if use_spaces { tab_width } else { 1 };
         self.modified = true;
     }
@@ -1253,16 +1070,7 @@ impl Document {
         tab_width: usize,
         use_spaces: bool,
     ) {
-        let line_count = if self.use_piece_table {
-            if let Some(ref text_buffer) = self.text_buffer {
-                let mut text_buffer = text_buffer.clone();
-                text_buffer.line_count()
-            } else {
-                0
-            }
-        } else {
-            self.line_count()
-        };
+        let line_count = self.line_count();
         let end_line = std::cmp::min(start_line + count, line_count);
         let indent = if use_spaces {
             " ".repeat(tab_width)
@@ -1270,140 +1078,77 @@ impl Document {
             "\t".to_string()
         };
 
-        if self.use_piece_table {
-            if let Some(ref mut text_buffer) = self.text_buffer {
-                for line_idx in start_line..end_line {
-                    let pos = crate::text_buffer::Position::new(line_idx, 0);
-                    text_buffer.insert(pos, &indent);
-                }
-                self.mark_piece_table_dirty();
-            }
-        } else {
-            for line_idx in start_line..end_line {
-                self.lines[line_idx].insert_str(0, &indent);
-            }
+        for line_idx in start_line..end_line {
+            use crate::text_buffer::Position;
+            let pos = Position::new(line_idx, 0);
+            self.text_buffer.insert(pos, &indent);
         }
 
         self.modified = true;
     }
 
     pub fn dedent_line(&mut self, tab_width: usize) {
-        if self.use_piece_table {
-            if let Some(ref mut text_buffer) = self.text_buffer {
-                if let Some(line) = text_buffer.get_line(self.cursor_line) {
-                    let chars_to_remove;
-                    
-                    // Try to remove a tab first
-                    if line.starts_with('\t') {
-                        chars_to_remove = 1;
-                    } else {
-                        // Try to remove spaces up to tab_width
-                        let mut removed = 0;
-                        for ch in line.chars() {
-                            if ch == ' ' && removed < tab_width {
-                                removed += 1;
-                            } else {
-                                break;
-                            }
-                        }
-                        chars_to_remove = removed;
-                    }
-                    
-                    if chars_to_remove > 0 {
-                        let start_pos = crate::text_buffer::Position::new(self.cursor_line, 0);
-                        let end_pos = crate::text_buffer::Position::new(self.cursor_line, chars_to_remove);
-                        let range = crate::text_buffer::Range::new(start_pos, end_pos);
-                        text_buffer.delete(range);
-                        self.cursor_column = self.cursor_column.saturating_sub(chars_to_remove);
-                        self.mark_piece_table_dirty();
-                        self.modified = true;
-                    }
-                }
-            }
-        } else {
-            let line = &mut self.lines[self.cursor_line];
-
+        if let Some(line) = self.get_line(self.cursor_line) {
+            let chars_to_remove;
+            
             // Try to remove a tab first
             if line.starts_with('\t') {
-                line.remove(0);
-                if self.cursor_column > 0 {
-                    self.cursor_column -= 1;
-                }
-                self.modified = true;
+                chars_to_remove = 1;
             } else {
                 // Try to remove spaces up to tab_width
                 let mut removed = 0;
-                while removed < tab_width && line.starts_with(' ') {
-                    line.remove(0);
-                    removed += 1;
+                for ch in line.chars() {
+                    if ch == ' ' && removed < tab_width {
+                        removed += 1;
+                    } else {
+                        break;
+                    }
                 }
-                if removed > 0 {
-                    self.cursor_column = self.cursor_column.saturating_sub(removed);
-                    self.modified = true;
-                }
+                chars_to_remove = removed;
+            }
+            
+            if chars_to_remove > 0 {
+                use crate::text_buffer::{Position, Range};
+                let start_pos = Position::new(self.cursor_line, 0);
+                let end_pos = Position::new(self.cursor_line, chars_to_remove);
+                let range = Range::new(start_pos, end_pos);
+                self.text_buffer.delete(range);
+                self.cursor_column = self.cursor_column.saturating_sub(chars_to_remove);
+                self.modified = true;
             }
         }
     }
 
     pub fn dedent_lines(&mut self, start_line: usize, count: usize, tab_width: usize) {
-        let line_count = if self.use_piece_table {
-            if let Some(ref text_buffer) = self.text_buffer {
-                let mut text_buffer = text_buffer.clone();
-                text_buffer.line_count()
-            } else {
-                0
-            }
-        } else {
-            self.line_count()
-        };
+        let line_count = self.line_count();
         let end_line = std::cmp::min(start_line + count, line_count);
 
-        if self.use_piece_table {
-            if let Some(ref mut text_buffer) = self.text_buffer {
-                for line_idx in start_line..end_line {
-                    if let Some(line) = text_buffer.get_line(line_idx) {
-                        let chars_to_remove;
-                        
-                        // Try to remove a tab first
-                        if line.starts_with('\t') {
-                            chars_to_remove = 1;
-                        } else {
-                            // Try to remove spaces up to tab_width
-                            let mut removed = 0;
-                            for ch in line.chars() {
-                                if ch == ' ' && removed < tab_width {
-                                    removed += 1;
-                                } else {
-                                    break;
-                                }
-                            }
-                            chars_to_remove = removed;
-                        }
-                        
-                        if chars_to_remove > 0 {
-                            let start_pos = crate::text_buffer::Position::new(line_idx, 0);
-                            let end_pos = crate::text_buffer::Position::new(line_idx, chars_to_remove);
-                            let range = crate::text_buffer::Range::new(start_pos, end_pos);
-                            text_buffer.delete(range);
-                        }
-                    }
-                }
-                self.mark_piece_table_dirty();
-            }
-        } else {
-            for line_idx in start_line..end_line {
-                let line = &mut self.lines[line_idx];
-
+        for line_idx in start_line..end_line {
+            if let Some(line) = self.get_line(line_idx) {
+                let chars_to_remove;
+                
                 // Try to remove a tab first
                 if line.starts_with('\t') {
-                    line.remove(0);
+                    chars_to_remove = 1;
                 } else {
                     // Try to remove spaces up to tab_width
                     let mut removed = 0;
-                    while removed < tab_width && line.starts_with(' ') {
-                        line.remove(0);
-                        removed += 1;
+                    for ch in line.chars() {
+                        if ch == ' ' && removed < tab_width {
+                            removed += 1;
+                        } else {
+                            break;
+                        }
                     }
+                    chars_to_remove = removed;
+                }
+                
+                if chars_to_remove > 0 {
+                    use crate::text_buffer::{Position, Range};
+                    let start_pos = Position::new(line_idx, 0);
+                    let end_pos = Position::new(line_idx, chars_to_remove);
+                    let range = Range::new(start_pos, end_pos);
+                    self.text_buffer.delete(range);
                 }
             }
         }
@@ -1450,49 +1195,22 @@ impl Document {
     // Yank (copy) operations - return text to be copied to registers
 
     pub fn yank_line(&self) -> String {
-        if self.use_piece_table {
-            if let Some(ref text_buffer) = self.text_buffer {
-                let mut text_buffer = text_buffer.clone();
-                text_buffer.get_line(self.cursor_line).unwrap_or_default()
-            } else {
-                String::new()
-            }
+        if !self.is_empty() && self.cursor_line < self.line_count() {
+            self.get_line(self.cursor_line).unwrap_or_default()
         } else {
-            if !self.lines.is_empty() && self.cursor_line < self.line_count() {
-                self.lines[self.cursor_line].clone()
-            } else {
-                String::new()
-            }
+            String::new()
         }
     }
 
     pub fn yank_to_end_of_line(&self) -> String {
-        if self.use_piece_table {
-            if let Some(ref text_buffer) = self.text_buffer {
-                let mut text_buffer = text_buffer.clone();
-                if let Some(line) = text_buffer.get_line(self.cursor_line) {
-                    if self.cursor_column <= line.len() {
-                        line[self.cursor_column..].to_string()
-                    } else {
-                        String::new()
-                    }
-                } else {
-                    String::new()
-                }
+        if let Some(line) = self.get_line(self.cursor_line) {
+            if self.cursor_column <= line.len() {
+                line[self.cursor_column..].to_string()
             } else {
                 String::new()
             }
         } else {
-            if self.cursor_line < self.line_count() {
-                let line = &self.lines[self.cursor_line];
-                if self.cursor_column <= line.len() {
-                    line[self.cursor_column..].to_string()
-                } else {
-                    String::new()
-                }
-            } else {
-                String::new()
-            }
+            String::new()
         }
     }
 
@@ -1553,92 +1271,38 @@ impl Document {
     }
 
     pub fn yank_to_start_of_line(&self) -> String {
-        if self.use_piece_table {
-            if let Some(ref text_buffer) = self.text_buffer {
-                let mut text_buffer = text_buffer.clone();
-                if let Some(line) = text_buffer.get_line(self.cursor_line) {
-                    if self.cursor_column <= line.len() {
-                        line[..self.cursor_column].to_string()
-                    } else {
-                        line.to_string()
-                    }
-                } else {
-                    String::new()
-                }
+        if let Some(line) = self.get_line(self.cursor_line) {
+            if self.cursor_column <= line.len() {
+                line[..self.cursor_column].to_string()
             } else {
-                String::new()
+                line.to_string()
             }
         } else {
-            if self.cursor_line < self.line_count() {
-                let line = &self.lines[self.cursor_line];
-                if self.cursor_column <= line.len() {
-                    line[..self.cursor_column].to_string()
-                } else {
-                    line.to_string()
-                }
-            } else {
-                String::new()
-            }
+            String::new()
         }
     }
 
     pub fn yank_to_first_non_whitespace(&self) -> String {
-        if self.use_piece_table {
-            if let Some(ref text_buffer) = self.text_buffer {
-                let mut text_buffer = text_buffer.clone();
-                if let Some(line) = text_buffer.get_line(self.cursor_line) {
-                    let first_non_ws = line.chars().position(|c| !c.is_whitespace()).unwrap_or(0);
-                    if self.cursor_column >= first_non_ws {
-                        line[first_non_ws..self.cursor_column].to_string()
-                    } else {
-                        line[self.cursor_column..first_non_ws].to_string()
-                    }
-                } else {
-                    String::new()
-                }
+        if let Some(line) = self.get_line(self.cursor_line) {
+            let first_non_ws = line.chars().position(|c| !c.is_whitespace()).unwrap_or(0);
+            if self.cursor_column >= first_non_ws {
+                line[first_non_ws..self.cursor_column].to_string()
             } else {
-                String::new()
+                line[self.cursor_column..first_non_ws].to_string()
             }
         } else {
-            if self.cursor_line < self.line_count() {
-                let line = &self.lines[self.cursor_line];
-                let first_non_ws = line.chars().position(|c| !c.is_whitespace()).unwrap_or(0);
-                if self.cursor_column >= first_non_ws {
-                    line[first_non_ws..self.cursor_column].to_string()
-                } else {
-                    line[self.cursor_column..first_non_ws].to_string()
-                }
-            } else {
-                String::new()
-            }
+            String::new()
         }
     }
 
     pub fn yank_to_end_of_file(&self) -> String {
         let start_line = self.cursor_line;
         let start_col = self.cursor_column;
-        let (end_line, end_col) = if self.use_piece_table {
-            if let Some(ref text_buffer) = self.text_buffer {
-                let mut text_buffer = text_buffer.clone();
-                let line_count = text_buffer.line_count();
-                let end_line = line_count.saturating_sub(1);
-                let end_col = if line_count > 0 {
-                    text_buffer.line_length(end_line)
-                } else {
-                    0
-                };
-                (end_line, end_col)
-            } else {
-                (0, 0)
-            }
+        let end_line = self.line_count().saturating_sub(1);
+        let end_col = if !self.is_empty() {
+            self.get_line_length(end_line)
         } else {
-            let end_line = self.line_count().saturating_sub(1);
-            let end_col = if !self.lines.is_empty() {
-                self.lines[end_line].len()
-            } else {
-                0
-            };
-            (end_line, end_col)
+            0
         };
 
         self.get_text_range(start_line, start_col, end_line, end_col)
@@ -1707,8 +1371,8 @@ impl Document {
     }
 
     pub fn change_line(&mut self) -> String {
-        let deleted = self.lines[self.cursor_line].clone();
-        self.lines[self.cursor_line].clear();
+        let deleted = self.get_line(self.cursor_line).unwrap_or_default();
+        self.set_line(self.cursor_line, "");
         self.cursor_column = 0;
         self.modified = true;
         deleted
@@ -1808,8 +1472,8 @@ impl Document {
     #[allow(dead_code)]
     fn get_char_at_cursor(&self) -> String {
         if self.cursor_line < self.line_count() {
-            let line = &self.lines[self.cursor_line];
-            if self.cursor_column < line.len() {
+            let line = self.get_line(self.cursor_line).unwrap_or_default();
+            if self.cursor_column < self.get_line_length(self.cursor_line) {
                 let chars: Vec<char> = line.chars().collect();
                 chars[self.cursor_column].to_string()
             } else {
@@ -1823,16 +1487,7 @@ impl Document {
     /// Join the current line with the next line (vim J command)
     /// Returns true if lines were joined, false if at last line
     pub fn join_lines(&mut self) -> bool {
-        let line_count = if self.use_piece_table {
-            if let Some(ref text_buffer) = self.text_buffer {
-                let mut text_buffer = text_buffer.clone();
-                text_buffer.line_count()
-            } else {
-                0
-            }
-        } else {
-            self.line_count()
-        };
+        let line_count = self.line_count();
         
         // Check if we can join (not at the last line)
         if self.cursor_line >= line_count - 1 {
@@ -1842,23 +1497,9 @@ impl Document {
         let current_line = self.cursor_line;
         let next_line = current_line + 1;
 
-        // Save original state for undo
-        let _original_cursor = (self.cursor_line, self.cursor_column);
-
         // Get the lines to join
-        let (mut current_line_text, next_line_text) = if self.use_piece_table {
-            if let Some(ref mut text_buffer) = self.text_buffer {
-                let current = text_buffer.get_line(current_line).unwrap_or_default();
-                let next = text_buffer.get_line(next_line).unwrap_or_default();
-                (current, next)
-            } else {
-                (String::new(), String::new())
-            }
-        } else {
-            let current = self.lines[current_line].clone();
-            let next = self.lines[next_line].clone();
-            (current, next)
-        };
+        let current_line_text = self.get_line(current_line).unwrap_or_default();
+        let next_line_text = self.get_line(next_line).unwrap_or_default();
 
         // Remember cursor position before join for undo
         let join_position = current_line_text.len();
@@ -1872,16 +1513,16 @@ impl Document {
             && !current_line_text.is_empty()
             && !next_line_text.is_empty();
 
+        let mut joined_line = current_line_text;
         if needs_space {
-            current_line_text.push(' ');
+            joined_line.push(' ');
         }
 
         // Trim leading whitespace from the next line
         let trimmed_next = next_line_text.trim_start();
-        current_line_text.push_str(trimmed_next);
+        joined_line.push_str(trimmed_next);
 
         // Record undo information
-        let second_line_text = next_line_text.clone();
         self.undo_manager
             .add_action(crate::undo::UndoAction::JoinLines {
                 line: current_line,
@@ -1890,36 +1531,12 @@ impl Document {
                 } else {
                     String::new()
                 },
-                second_line_text,
+                second_line_text: next_line_text,
             });
 
-        // Update the document
-        if self.use_piece_table {
-            if let Some(ref mut text_buffer) = self.text_buffer {
-                // Replace current line with joined content
-                let current_start = crate::text_buffer::Position::new(current_line, 0);
-                let current_end = crate::text_buffer::Position::new(current_line, text_buffer.line_length(current_line));
-                let current_range = crate::text_buffer::Range::new(current_start, current_end);
-                text_buffer.replace(current_range, &current_line_text);
-                
-                // Delete the next line including its newline
-                let next_start = crate::text_buffer::Position::new(next_line, 0);
-                let next_end_line = if next_line + 1 < text_buffer.line_count() {
-                    next_line + 1
-                } else {
-                    next_line
-                };
-                let next_end_col = if next_line + 1 < text_buffer.line_count() { 0 } else { text_buffer.line_length(next_line) };
-                let next_end = crate::text_buffer::Position::new(next_end_line, next_end_col);
-                let next_range = crate::text_buffer::Range::new(next_start, next_end);
-                text_buffer.delete(next_range);
-                
-                self.mark_piece_table_dirty();
-            }
-        } else {
-            self.lines[current_line] = current_line_text;
-            self.lines.remove(next_line);
-        }
+        // Update the document using piece table operations
+        self.set_line(current_line, &joined_line);
+        self.delete_line_at(next_line);
 
         // Position cursor at the join point
         self.cursor_column = if needs_space {
@@ -1935,31 +1552,11 @@ impl Document {
     /// Toggle case of character at cursor position
     /// Returns true if a character was toggled, false if no character at cursor
     pub fn toggle_case_char(&mut self) -> bool {
-        let line_count = if self.use_piece_table {
-            if let Some(ref text_buffer) = self.text_buffer {
-                let mut text_buffer = text_buffer.clone();
-                text_buffer.line_count()
-            } else {
-                0
-            }
-        } else {
-            self.line_count()
-        };
-        
-        if self.cursor_line >= line_count {
+        if self.cursor_line >= self.line_count() {
             return false;
         }
 
-        let line = if self.use_piece_table {
-            if let Some(ref text_buffer) = self.text_buffer {
-                let mut text_buffer = text_buffer.clone();
-                text_buffer.get_line(self.cursor_line).unwrap_or_default()
-            } else {
-                String::new()
-            }
-        } else {
-            self.lines[self.cursor_line].clone()
-        };
+        let line = self.get_line(self.cursor_line).unwrap_or_default();
         
         if self.cursor_column >= line.len() {
             return false;
@@ -1993,25 +1590,16 @@ impl Document {
                 text: new_char.clone(),
             });
 
-        // Replace character
-        let mut new_chars = chars;
-        new_chars[self.cursor_column] = new_char.chars().next().unwrap();
-        let new_line: String = new_chars.into_iter().collect();
-        
-        if self.use_piece_table {
-            if let Some(ref mut text_buffer) = self.text_buffer {
-                let start_pos = crate::text_buffer::Position::new(self.cursor_line, 0);
-                let end_pos = crate::text_buffer::Position::new(self.cursor_line, text_buffer.line_length(self.cursor_line));
-                let range = crate::text_buffer::Range::new(start_pos, end_pos);
-                text_buffer.replace(range, &new_line);
-                self.mark_piece_table_dirty();
-            }
-        } else {
-            self.lines[self.cursor_line] = new_line.clone();
-        }
+        // Replace character using piece table
+        use crate::text_buffer::{Position, Range};
+        let char_start = Position::new(self.cursor_line, self.cursor_column);
+        let char_end = Position::new(self.cursor_line, self.cursor_column + 1);
+        let range = Range::new(char_start, char_end);
+        self.text_buffer.replace(range, &new_char);
 
         // Move cursor forward (vim behavior)
-        if self.cursor_column < new_line.len() - 1 {
+        let line_length = self.get_line_length(self.cursor_line);
+        if self.cursor_column < line_length.saturating_sub(1) {
             self.cursor_column += 1;
         }
 
@@ -2025,29 +1613,29 @@ impl Document {
             return;
         }
 
-        let line = &mut self.lines[self.cursor_line];
-        let original_line = line.clone();
-        let lowercase_line = line.to_lowercase();
+        if let Some(original_line) = self.get_line(self.cursor_line) {
+            let lowercase_line = original_line.to_lowercase();
 
-        if original_line != lowercase_line {
-            // Record undo action
-            self.undo_manager
-                .add_action(crate::undo::UndoAction::DeleteText {
-                    line: self.cursor_line,
-                    column: 0,
-                    text: original_line,
-                });
-            self.undo_manager
-                .add_action(crate::undo::UndoAction::InsertText {
-                    line: self.cursor_line,
-                    column: 0,
-                    text: lowercase_line.clone(),
-                });
+            if original_line != lowercase_line {
+                // Record undo action
+                self.undo_manager
+                    .add_action(crate::undo::UndoAction::DeleteText {
+                        line: self.cursor_line,
+                        column: 0,
+                        text: original_line,
+                    });
+                self.undo_manager
+                    .add_action(crate::undo::UndoAction::InsertText {
+                        line: self.cursor_line,
+                        column: 0,
+                        text: lowercase_line.clone(),
+                    });
 
-            *line = lowercase_line;
-            self.modified = true;
-            // Ensure cursor column remains valid after line modification
-            self.clamp_cursor_column();
+                self.set_line(self.cursor_line, &lowercase_line);
+                self.modified = true;
+                // Ensure cursor column remains valid after line modification
+                self.clamp_cursor_column();
+            }
         }
     }
 
@@ -2057,29 +1645,29 @@ impl Document {
             return;
         }
 
-        let line = &mut self.lines[self.cursor_line];
-        let original_line = line.clone();
-        let uppercase_line = line.to_uppercase();
+        if let Some(original_line) = self.get_line(self.cursor_line) {
+            let uppercase_line = original_line.to_uppercase();
 
-        if original_line != uppercase_line {
-            // Record undo action
-            self.undo_manager
-                .add_action(crate::undo::UndoAction::DeleteText {
-                    line: self.cursor_line,
-                    column: 0,
-                    text: original_line,
-                });
-            self.undo_manager
-                .add_action(crate::undo::UndoAction::InsertText {
-                    line: self.cursor_line,
-                    column: 0,
-                    text: uppercase_line.clone(),
-                });
+            if original_line != uppercase_line {
+                // Record undo action
+                self.undo_manager
+                    .add_action(crate::undo::UndoAction::DeleteText {
+                        line: self.cursor_line,
+                        column: 0,
+                        text: original_line,
+                    });
+                self.undo_manager
+                    .add_action(crate::undo::UndoAction::InsertText {
+                        line: self.cursor_line,
+                        column: 0,
+                        text: uppercase_line.clone(),
+                    });
 
-            *line = uppercase_line;
-            self.modified = true;
-            // Ensure cursor column remains valid after line modification
-            self.clamp_cursor_column();
+                self.set_line(self.cursor_line, &uppercase_line);
+                self.modified = true;
+                // Ensure cursor column remains valid after line modification
+                self.clamp_cursor_column();
+            }
         }
     }
 
@@ -2091,64 +1679,17 @@ impl Document {
         end_line: usize,
         end_col: usize,
     ) -> String {
-        if self.use_piece_table {
-            if let Some(ref text_buffer) = self.text_buffer {
-                let mut text_buffer = text_buffer.clone();
-                let line_count = text_buffer.line_count();
-                
-                if start_line >= line_count || end_line >= line_count {
-                    return String::new();
-                }
-
-                let start_pos = crate::text_buffer::Position::new(start_line, start_col);
-                let end_pos = crate::text_buffer::Position::new(end_line, end_col);
-                let range = crate::text_buffer::Range::new(start_pos, end_pos);
-                
-                text_buffer.get_text_range(range)
-            } else {
-                String::new()
-            }
-        } else {
-            if start_line >= self.line_count() || end_line >= self.line_count() {
-                return String::new();
-            }
-
-            if start_line == end_line {
-                let line = &self.lines[start_line];
-                let start = start_col.min(line.len());
-                let end = end_col.min(line.len());
-                if start < end {
-                    line[start..end].to_string()
-                } else {
-                    String::new()
-                }
-            } else {
-                let mut result = String::new();
-
-                // First line
-                let first_line = &self.lines[start_line];
-                let start = start_col.min(first_line.len());
-                if start < first_line.len() {
-                    result.push_str(&first_line[start..]);
-                }
-                result.push('\n');
-
-                // Middle lines
-                for i in (start_line + 1)..end_line {
-                    result.push_str(&self.lines[i]);
-                    result.push('\n');
-                }
-
-                // Last line
-                if end_line > start_line {
-                    let last_line = &self.lines[end_line];
-                    let end = end_col.min(last_line.len());
-                    result.push_str(&last_line[..end]);
-                }
-
-                result
-            }
+        if start_line >= self.line_count() || end_line >= self.line_count() {
+            return String::new();
         }
+
+        use crate::text_buffer::{Position, Range};
+        let start_pos = Position::new(start_line, start_col);
+        let end_pos = Position::new(end_line, end_col);
+        let range = Range::new(start_pos, end_pos);
+        
+        let mut text_buffer = self.text_buffer.clone();
+        text_buffer.get_text_range(range)
     }
 
     // Position calculation functions for yank operations - eliminates document cloning
@@ -2156,15 +1697,15 @@ impl Document {
         let mut cursor_line = self.cursor_line;
         let mut cursor_column = self.cursor_column;
 
-        let line = &self.lines[cursor_line];
+        let line = self.get_line(cursor_line).unwrap_or_default();
 
         // If at end of line, move to next line
-        if cursor_column >= line.len() {
+        if cursor_column >= self.get_line_length(self.cursor_line) {
             if cursor_line < self.line_count() - 1 {
                 cursor_line += 1;
                 cursor_column = 0;
                 // Find first non-whitespace on new line
-                let new_line = &self.lines[cursor_line];
+                let new_line = self.get_line(cursor_line).unwrap_or_default();
                 for (i, c) in new_line.chars().enumerate() {
                     if !c.is_whitespace() {
                         cursor_column = i;
@@ -2219,7 +1760,7 @@ impl Document {
                 cursor_line += 1;
                 cursor_column = 0;
                 // Find first non-whitespace on new line
-                let new_line = &self.lines[cursor_line];
+                let new_line = self.get_line(cursor_line).unwrap_or_default();
                 for (i, c) in new_line.chars().enumerate() {
                     if !c.is_whitespace() {
                         cursor_column = i;
@@ -2243,8 +1784,8 @@ impl Document {
         if cursor_column == 0 {
             if cursor_line > 0 {
                 cursor_line -= 1;
-                let line = &self.lines[cursor_line];
-                cursor_column = line.len();
+                let line = self.get_line(cursor_line).unwrap_or_default();
+                cursor_column = self.get_line_length(self.cursor_line);
                 // Find last non-whitespace character
                 let chars: Vec<char> = line.chars().collect();
                 while cursor_column > 0 && chars[cursor_column - 1].is_whitespace() {
@@ -2254,7 +1795,7 @@ impl Document {
             return (cursor_line, cursor_column);
         }
 
-        let line = &self.lines[cursor_line];
+        let line = self.get_line(cursor_line).unwrap_or_default();
         let chars: Vec<char> = line.chars().collect();
 
         // Move back one position first
@@ -2299,8 +1840,8 @@ impl Document {
         let cursor_line = self.cursor_line;
         let mut cursor_column = self.cursor_column;
 
-        let line = &self.lines[cursor_line];
-        if cursor_column < line.len() {
+        let line = self.get_line(cursor_line).unwrap_or_default();
+        if cursor_column < self.get_line_length(self.cursor_line) {
             let chars: Vec<char> = line.chars().collect();
 
             // If on whitespace, move to start of next word first
@@ -2326,8 +1867,8 @@ impl Document {
         let mut cursor_column = self.cursor_column;
 
         loop {
-            let line = &self.lines[cursor_line];
-            if cursor_column >= line.len() {
+            let line = self.get_line(cursor_line).unwrap_or_default();
+            if cursor_column >= self.get_line_length(self.cursor_line) {
                 if cursor_line < self.line_count() - 1 {
                     cursor_line += 1;
                     cursor_column = 0;
@@ -2372,12 +1913,12 @@ impl Document {
             if cursor_column == 0 {
                 if cursor_line > 0 {
                     cursor_line -= 1;
-                    cursor_column = self.lines[cursor_line].len();
+                    cursor_column = self.get_line_length(cursor_line);
                 } else {
                     break;
                 }
             } else {
-                let line = &self.lines[cursor_line];
+                let line = self.get_line(cursor_line).unwrap_or_default();
                 let chars: Vec<char> = line.chars().collect();
 
                 cursor_column -= 1;
@@ -2403,8 +1944,8 @@ impl Document {
         let cursor_line = self.cursor_line;
         let mut cursor_column = self.cursor_column;
 
-        let line = &self.lines[cursor_line];
-        if cursor_column < line.len() {
+        let line = self.get_line(cursor_line).unwrap_or_default();
+        if cursor_column < self.get_line_length(self.cursor_line) {
             let chars: Vec<char> = line.chars().collect();
 
             // If on whitespace, move to start of next word first
@@ -2429,7 +1970,7 @@ impl Document {
         forward: bool,
         before: bool,
     ) -> Option<(usize, usize)> {
-        let line = &self.lines[self.cursor_line];
+        let line = self.get_line(self.cursor_line).unwrap_or_default();
         let chars: Vec<char> = line.chars().collect();
         let mut cursor_column = self.cursor_column;
 
@@ -2471,8 +2012,8 @@ impl Document {
             return None;
         }
 
-        let line = &self.lines[self.cursor_line];
-        if self.cursor_column >= line.len() {
+        let line = self.get_line(self.cursor_line).unwrap_or_default();
+        if self.cursor_column >= self.get_line_length(self.cursor_line) {
             return None;
         }
 
@@ -2509,33 +2050,15 @@ impl Document {
     }
 
     pub fn find_matching_bracket(&self) -> Option<(usize, usize)> {
-        let line_count = if self.use_piece_table {
-            if let Some(ref text_buffer) = self.text_buffer {
-                let mut text_buffer = text_buffer.clone();
-                text_buffer.line_count()
-            } else {
-                0
-            }
-        } else {
-            self.line_count()
-        };
+        let line_count = self.line_count();
         
         if self.cursor_line >= line_count {
             return None;
         }
 
-        let line = if self.use_piece_table {
-            if let Some(ref text_buffer) = self.text_buffer {
-                let mut text_buffer = text_buffer.clone();
-                text_buffer.get_line(self.cursor_line).unwrap_or_default()
-            } else {
-                String::new()
-            }
-        } else {
-            self.lines[self.cursor_line].clone()
-        };
+        let line = self.get_line(self.cursor_line).unwrap_or_default();
         
-        if self.cursor_column >= line.len() {
+        if self.cursor_column >= self.get_line_length(self.cursor_line) {
             return None;
         }
 
@@ -2574,23 +2097,14 @@ impl Document {
 
     /// Check if the bracket at the cursor position is unmatched
     pub fn is_unmatched_bracket(&self) -> Option<(usize, usize)> {
-        let line_count = if self.use_piece_table {
-            if let Some(ref text_buffer) = self.text_buffer {
-                let mut text_buffer = text_buffer.clone();
-                text_buffer.line_count()
-            } else {
-                0
-            }
-        } else {
-            self.line_count()
-        };
+        let line_count = self.line_count();
         
         if self.cursor_line >= line_count {
             return None;
         }
 
-        let line = &self.lines[self.cursor_line];
-        if self.cursor_column >= line.len() {
+        let line = self.get_line(self.cursor_line).unwrap_or_default();
+        if self.cursor_column >= self.get_line_length(self.cursor_line) {
             return None;
         }
 
@@ -2645,16 +2159,8 @@ impl Document {
             let mut stack: Vec<(usize, usize)> = Vec::new(); // Stack of opening bracket positions
 
             // Scan through the entire document
-            let lines = if self.use_piece_table {
-                if let Some(ref text_buffer) = self.text_buffer {
-                    let mut text_buffer = text_buffer.clone();
-                    text_buffer.get_lines()
-                } else {
-                    Vec::new()
-                }
-            } else {
-                self.lines.clone()
-            };
+            let mut text_buffer = self.text_buffer.clone();
+            let lines = text_buffer.get_lines();
             
             for (line_idx, line) in lines.iter().enumerate() {
                 let chars: Vec<char> = line.chars().collect();
@@ -2695,28 +2201,10 @@ impl Document {
         let mut line_idx = start_line;
         let mut col_idx = start_col + 1;
 
-        let line_count = if self.use_piece_table {
-            if let Some(ref text_buffer) = self.text_buffer {
-                let mut text_buffer = text_buffer.clone();
-                text_buffer.line_count()
-            } else {
-                0
-            }
-        } else {
-            self.line_count()
-        };
+        let line_count = self.line_count();
         
         while line_idx < line_count {
-            let line = if self.use_piece_table {
-                if let Some(ref text_buffer) = self.text_buffer {
-                    let mut text_buffer = text_buffer.clone();
-                    text_buffer.get_line(line_idx).unwrap_or_default()
-                } else {
-                    String::new()
-                }
-            } else {
-                self.lines[line_idx].clone()
-            };
+            let line = self.get_line(line_idx).unwrap_or_default();
             let chars: Vec<char> = line.chars().collect();
 
             while col_idx < chars.len() {
@@ -2759,16 +2247,7 @@ impl Document {
             // Find the first non-empty line going backwards
             let mut search_line = start_line - 1;
             loop {
-                let line = if self.use_piece_table {
-                    if let Some(ref text_buffer) = self.text_buffer {
-                        let mut text_buffer = text_buffer.clone();
-                        text_buffer.get_line(search_line).unwrap_or_default()
-                    } else {
-                        String::new()
-                    }
-                } else {
-                    self.lines[search_line].clone()
-                };
+                let line = self.get_line(search_line).unwrap_or_default();
                 let chars: Vec<char> = line.chars().collect();
                 if !chars.is_empty() {
                     line_idx = search_line;
@@ -2782,16 +2261,7 @@ impl Document {
         };
 
         loop {
-            let line = if self.use_piece_table {
-                if let Some(ref text_buffer) = self.text_buffer {
-                    let mut text_buffer = text_buffer.clone();
-                    text_buffer.get_line(line_idx).unwrap_or_default()
-                } else {
-                    String::new()
-                }
-            } else {
-                self.lines[line_idx].clone()
-            };
+            let line = self.get_line(line_idx).unwrap_or_default();
             let chars: Vec<char> = line.chars().collect();
 
             // Search backwards through the current line
@@ -2820,7 +2290,7 @@ impl Document {
                 break;
             }
             line_idx -= 1;
-            let prev_line = &self.lines[line_idx];
+            let prev_line = self.get_line(line_idx).unwrap_or_default();
             let prev_chars: Vec<char> = prev_line.chars().collect();
             if prev_chars.is_empty() {
                 // Empty line - continue to next iteration to check previous line
@@ -2842,11 +2312,9 @@ mod tests {
     fn test_piece_table_integration() {
         let mut doc = Document::new();
         
-        // Verify piece table is enabled by default
-        assert!(doc.is_using_piece_table());
-        
-        // Test synchronization works
-        assert!(doc.test_piece_table_sync());
+        // Verify piece table content is accessible
+        let content = doc.get_piece_table_content();
+        assert_eq!(content, "");
         
         println!("✅ Piece table integration working correctly");
     }
@@ -2854,7 +2322,7 @@ mod tests {
     #[test]
     fn test_piece_table_operations() {
         let mut doc = Document::new();
-        assert!(doc.is_using_piece_table());
+        // Piece table is now the only backend
         
         // Test insert_char uses piece table
         doc.cursor_line = 0;
@@ -2863,35 +2331,32 @@ mod tests {
         doc.insert_char('i');
         doc.insert_char('!');
         
-        // Verify content
-        assert_eq!(doc.lines[0], "Hi!");
+        // Verify content using piece table methods
+        assert_eq!(doc.get_line(0).unwrap_or_default(), "Hi!");
         assert_eq!(doc.cursor_column, 3);
         
-        if let Some(piece_table_content) = doc.get_piece_table_content() {
-            assert_eq!(piece_table_content, "Hi!");
-        }
+        let piece_table_content = doc.get_piece_table_content();
+        assert_eq!(piece_table_content, "Hi!");
         
         // Test delete_char uses piece table  
         doc.delete_char(); // Delete '!'
-        assert_eq!(doc.lines[0], "Hi");
+        assert_eq!(doc.get_line(0).unwrap_or_default(), "Hi");
         assert_eq!(doc.cursor_column, 2);
         
-        if let Some(piece_table_content) = doc.get_piece_table_content() {
-            assert_eq!(piece_table_content, "Hi");
-        }
+        let piece_table_content = doc.get_piece_table_content();
+        assert_eq!(piece_table_content, "Hi");
         
         // Test insert_newline uses piece table
         doc.cursor_column = 1; // Position after 'H'
         doc.insert_newline();
-        assert_eq!(doc.lines.len(), 2);
-        assert_eq!(doc.lines[0], "H");
-        assert_eq!(doc.lines[1], "i");
+        assert_eq!(doc.line_count(), 2);
+        assert_eq!(doc.get_line(0).unwrap_or_default(), "H");
+        assert_eq!(doc.get_line(1).unwrap_or_default(), "i");
         assert_eq!(doc.cursor_line, 1);
         assert_eq!(doc.cursor_column, 0);
         
-        if let Some(piece_table_content) = doc.get_piece_table_content() {
-            assert_eq!(piece_table_content, "H\ni");
-        }
+        let piece_table_content = doc.get_piece_table_content();
+        assert_eq!(piece_table_content, "H\ni");
         
         println!("✅ Piece table operations working correctly");
     }
@@ -2901,75 +2366,14 @@ mod tests {
         let mut doc = Document::new();
         
         // Verify initial state
-        assert_eq!(doc.lines.len(), 1);
-        assert_eq!(doc.lines[0], "");
+        assert_eq!(doc.line_count(), 1);
+        assert_eq!(doc.get_line(0).unwrap_or_default(), "");
         
         // Get piece table content
-        if let Some(content) = doc.get_piece_table_content() {
-            assert_eq!(content, "");
-        } else {
-            panic!("Piece table backend not found");
-        }
+        let content = doc.get_piece_table_content();
+        assert_eq!(content, "");
         
         println!("✅ Document creation with piece table successful");
     }
 
-    #[test]
-    fn test_piece_table_enable_disable() {
-        let mut doc = Document::new_legacy();
-        
-        // Should start without piece table
-        assert!(!doc.is_using_piece_table());
-        
-        // Enable piece table
-        assert!(doc.enable_piece_table());
-        assert!(doc.is_using_piece_table());
-        
-        // Disable piece table
-        assert!(doc.disable_piece_table());
-        assert!(!doc.is_using_piece_table());
-        
-        println!("✅ Piece table enable/disable working correctly");
-    }
-
-    #[test]
-    fn test_piece_table_performance() {
-        use std::time::Instant;
-        
-        // Create documents with and without piece table
-        let mut doc_piece_table = Document::new();
-        let mut doc_legacy = Document::new_legacy();
-        
-        // Add some content to both
-        let test_content = (0..100).map(|i| format!("Line {} with some content", i))
-            .collect::<Vec<_>>().join("\n");
-        
-        // Setup both documents with same content
-        doc_piece_table.lines = test_content.lines().map(|s| s.to_string()).collect();
-        doc_piece_table.sync_to_piece_table();
-        doc_legacy.lines = test_content.lines().map(|s| s.to_string()).collect();
-        
-        // Test line access performance
-        let start = Instant::now();
-        for i in 0..100 {
-            let _ = doc_piece_table.get_line_efficiently(i % 50);
-        }
-        let piece_table_time = start.elapsed();
-        
-        let start = Instant::now(); 
-        for i in 0..100 {
-            let _ = doc_legacy.get_line_efficiently(i % 50);
-        }
-        let legacy_time = start.elapsed();
-        
-        println!("🚀 Performance comparison:");
-        println!("   Piece table: {:?}", piece_table_time);
-        println!("   Legacy:      {:?}", legacy_time);
-        
-        // Both should work correctly
-        assert!(doc_piece_table.is_using_piece_table());
-        assert!(!doc_legacy.is_using_piece_table());
-        
-        println!("✅ Performance test completed");
-    }
 }

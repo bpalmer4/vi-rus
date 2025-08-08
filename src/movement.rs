@@ -3,17 +3,8 @@ use crate::document::Document;
 impl Document {
     // Word movement methods - moved from document.rs to keep it focused on data
     pub fn move_word_forward(&mut self) {
-        let (line, line_count) = if self.use_piece_table {
-            if let Some(ref mut text_buffer) = self.text_buffer {
-                let line = text_buffer.get_line(self.cursor_line).unwrap_or_default();
-                let line_count = text_buffer.line_count();
-                (line, line_count)
-            } else {
-                (String::new(), 0)
-            }
-        } else {
-            (self.lines[self.cursor_line].clone(), self.line_count())
-        };
+        let line = self.get_line(self.cursor_line).unwrap_or_default();
+        let line_count = self.line_count();
 
         // If at end of line, move to next line
         if self.cursor_column >= line.len() {
@@ -21,15 +12,7 @@ impl Document {
                 self.cursor_line += 1;
                 self.cursor_column = 0;
                 // Find first non-whitespace on new line
-                let new_line = if self.use_piece_table {
-                    if let Some(ref mut text_buffer) = self.text_buffer {
-                        text_buffer.get_line(self.cursor_line).unwrap_or_default()
-                    } else {
-                        String::new()
-                    }
-                } else {
-                    self.lines[self.cursor_line].clone()
-                };
+                let new_line = self.get_line(self.cursor_line).unwrap_or_default();
                 for (i, c) in new_line.chars().enumerate() {
                     if !c.is_whitespace() {
                         self.cursor_column = i;
@@ -84,15 +67,7 @@ impl Document {
                 self.cursor_line += 1;
                 self.cursor_column = 0;
                 // Find first non-whitespace on new line
-                let new_line = if self.use_piece_table {
-                    if let Some(ref mut text_buffer) = self.text_buffer {
-                        text_buffer.get_line(self.cursor_line).unwrap_or_default()
-                    } else {
-                        String::new()
-                    }
-                } else {
-                    self.lines[self.cursor_line].clone()
-                };
+                let new_line = self.get_line(self.cursor_line).unwrap_or_default();
                 for (i, c) in new_line.chars().enumerate() {
                     if !c.is_whitespace() {
                         self.cursor_column = i;
@@ -111,15 +86,7 @@ impl Document {
         if self.cursor_column == 0 {
             if self.cursor_line > 0 {
                 self.cursor_line -= 1;
-                let line = if self.use_piece_table {
-                    if let Some(ref mut text_buffer) = self.text_buffer {
-                        text_buffer.get_line(self.cursor_line).unwrap_or_default()
-                    } else {
-                        String::new()
-                    }
-                } else {
-                    self.lines[self.cursor_line].clone()
-                };
+                let line = self.get_line(self.cursor_line).unwrap_or_default();
                 self.cursor_column = line.len();
                 // Find last non-whitespace character
                 let chars: Vec<char> = line.chars().collect();
@@ -130,15 +97,7 @@ impl Document {
             return;
         }
 
-        let line = if self.use_piece_table {
-            if let Some(ref mut text_buffer) = self.text_buffer {
-                text_buffer.get_line(self.cursor_line).unwrap_or_default()
-            } else {
-                String::new()
-            }
-        } else {
-            self.lines[self.cursor_line].clone()
-        };
+        let line = self.get_line(self.cursor_line).unwrap_or_default();
         let chars: Vec<char> = line.chars().collect();
 
         // Move back one position first
@@ -178,15 +137,7 @@ impl Document {
     }
 
     pub fn move_word_end(&mut self) {
-        let line = if self.use_piece_table {
-            if let Some(ref mut text_buffer) = self.text_buffer {
-                text_buffer.get_line(self.cursor_line).unwrap_or_default()
-            } else {
-                String::new()
-            }
-        } else {
-            self.lines[self.cursor_line].clone()
-        };
+        let line = self.get_line(self.cursor_line).unwrap_or_default();
         if self.cursor_column < line.len() {
             let chars: Vec<char> = line.chars().collect();
 
@@ -211,17 +162,8 @@ impl Document {
     // Big word movement (space-separated)
     pub fn move_big_word_forward(&mut self) {
         loop {
-            let (line, line_count) = if self.use_piece_table {
-                if let Some(ref mut text_buffer) = self.text_buffer {
-                    let line = text_buffer.get_line(self.cursor_line).unwrap_or_default();
-                    let line_count = text_buffer.line_count();
-                    (line, line_count)
-                } else {
-                    (String::new(), 0)
-                }
-            } else {
-                (self.lines[self.cursor_line].clone(), self.line_count())
-            };
+            let line = self.get_line(self.cursor_line).unwrap_or_default();
+            let line_count = self.line_count();
             if self.cursor_column >= line.len() {
                 if self.cursor_line < line_count - 1 {
                     self.cursor_line += 1;
@@ -264,29 +206,13 @@ impl Document {
             if self.cursor_column == 0 {
                 if self.cursor_line > 0 {
                     self.cursor_line -= 1;
-                    let line_len = if self.use_piece_table {
-                        if let Some(ref mut text_buffer) = self.text_buffer {
-                            text_buffer.line_length(self.cursor_line)
-                        } else {
-                            0
-                        }
-                    } else {
-                        self.lines[self.cursor_line].len()
-                    };
+                    let line_len = self.get_line_length(self.cursor_line);
                     self.cursor_column = line_len;
                 } else {
                     break;
                 }
             } else {
-                let line = if self.use_piece_table {
-                    if let Some(ref mut text_buffer) = self.text_buffer {
-                        text_buffer.get_line(self.cursor_line).unwrap_or_default()
-                    } else {
-                        String::new()
-                    }
-                } else {
-                    self.lines[self.cursor_line].clone()
-                };
+                let line = self.get_line(self.cursor_line).unwrap_or_default();
                 let chars: Vec<char> = line.chars().collect();
 
                 self.cursor_column -= 1;
@@ -307,15 +233,7 @@ impl Document {
     }
 
     pub fn move_big_word_end(&mut self) {
-        let line = if self.use_piece_table {
-            if let Some(ref mut text_buffer) = self.text_buffer {
-                text_buffer.get_line(self.cursor_line).unwrap_or_default()
-            } else {
-                String::new()
-            }
-        } else {
-            self.lines[self.cursor_line].clone()
-        };
+        let line = self.get_line(self.cursor_line).unwrap_or_default();
         if self.cursor_column < line.len() {
             let chars: Vec<char> = line.chars().collect();
 
@@ -342,15 +260,7 @@ impl Document {
     }
 
     pub fn move_line_end(&mut self) {
-        let line_len = if self.use_piece_table {
-            if let Some(ref mut text_buffer) = self.text_buffer {
-                text_buffer.line_length(self.cursor_line)
-            } else {
-                0
-            }
-        } else {
-            self.lines[self.cursor_line].len()
-        };
+        let line_len = self.get_line_length(self.cursor_line);
         self.cursor_column = line_len;
         if self.cursor_column > 0 {
             self.cursor_column -= 1; // Don't go past last character
@@ -358,15 +268,7 @@ impl Document {
     }
 
     pub fn move_first_non_whitespace(&mut self) {
-        let line = if self.use_piece_table {
-            if let Some(ref mut text_buffer) = self.text_buffer {
-                text_buffer.get_line(self.cursor_line).unwrap_or_default()
-            } else {
-                String::new()
-            }
-        } else {
-            self.lines[self.cursor_line].clone()
-        };
+        let line = self.get_line(self.cursor_line).unwrap_or_default();
         self.cursor_column = 0;
         for (i, c) in line.chars().enumerate() {
             if !c.is_whitespace() {
@@ -377,15 +279,7 @@ impl Document {
     }
 
     pub fn move_down_to_first_non_whitespace(&mut self) {
-        let line_count = if self.use_piece_table {
-            if let Some(ref mut text_buffer) = self.text_buffer {
-                text_buffer.line_count()
-            } else {
-                0
-            }
-        } else {
-            self.line_count()
-        };
+        let line_count = self.line_count();
         if self.cursor_line < line_count - 1 {
             self.cursor_line += 1;
             self.move_first_non_whitespace();
@@ -406,15 +300,7 @@ impl Document {
     }
 
     pub fn move_document_end(&mut self) {
-        let line_count = if self.use_piece_table {
-            if let Some(ref mut text_buffer) = self.text_buffer {
-                text_buffer.line_count()
-            } else {
-                0
-            }
-        } else {
-            self.line_count()
-        };
+        let line_count = self.line_count();
         self.cursor_line = if line_count == 0 {
             0
         } else {
@@ -431,15 +317,7 @@ impl Document {
 
     pub fn move_page_down(&mut self) {
         let page_size = 20; // Could be made configurable
-        let line_count = if self.use_piece_table {
-            if let Some(ref mut text_buffer) = self.text_buffer {
-                text_buffer.line_count()
-            } else {
-                0
-            }
-        } else {
-            self.line_count()
-        };
+        let line_count = self.line_count();
         self.cursor_line = std::cmp::min(self.cursor_line + page_size, line_count.saturating_sub(1));
         self.clamp_cursor_column();
     }
@@ -452,44 +330,20 @@ impl Document {
 
     pub fn move_half_page_down(&mut self) {
         let half_page = 10; // Could be made configurable
-        let line_count = if self.use_piece_table {
-            if let Some(ref mut text_buffer) = self.text_buffer {
-                text_buffer.line_count()
-            } else {
-                0
-            }
-        } else {
-            self.line_count()
-        };
+        let line_count = self.line_count();
         self.cursor_line = std::cmp::min(self.cursor_line + half_page, line_count.saturating_sub(1));
         self.clamp_cursor_column();
     }
 
     pub fn move_to_line(&mut self, line: usize) {
-        let line_count = if self.use_piece_table {
-            if let Some(ref mut text_buffer) = self.text_buffer {
-                text_buffer.line_count()
-            } else {
-                0
-            }
-        } else {
-            self.line_count()
-        };
+        let line_count = self.line_count();
         self.cursor_line = std::cmp::min(line.saturating_sub(1), line_count.saturating_sub(1));
         self.cursor_column = 0;
     }
 
     // Character search
     pub fn find_char(&mut self, target: char, forward: bool, before: bool) {
-        let line = if self.use_piece_table {
-            if let Some(ref mut text_buffer) = self.text_buffer {
-                text_buffer.get_line(self.cursor_line).unwrap_or_default()
-            } else {
-                String::new()
-            }
-        } else {
-            self.lines[self.cursor_line].clone()
-        };
+        let line = self.get_line(self.cursor_line).unwrap_or_default();
         let chars: Vec<char> = line.chars().collect();
 
         if forward {

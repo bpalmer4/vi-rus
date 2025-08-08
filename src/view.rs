@@ -249,16 +249,7 @@ impl View {
         // Calculate line number width and text offset
         let line_num_width = if self.show_line_numbers {
             // Calculate width needed for line numbers (based on total lines)
-            let total_lines = if doc.use_piece_table {
-                if let Some(ref text_buffer) = doc.text_buffer {
-                    let mut text_buffer = text_buffer.clone();
-                    text_buffer.line_count()
-                } else {
-                    0
-                }
-            } else {
-                doc.lines.len()
-            };
+            let total_lines = doc.line_count();
             if total_lines == 0 {
                 4
             } else {
@@ -279,17 +270,19 @@ impl View {
         self.adjust_scroll_to_cursor(doc, max_lines, text_width);
 
         // Get visible lines with scrolling applied
-        let visible_lines: Vec<String> = doc
-            .lines
-            .iter()
-            .skip(self.scroll_offset)
-            .take(max_lines)
-            .enumerate()
-            .map(|(i, line)| {
+        let visible_lines: Vec<String> = (0..max_lines)
+            .map(|i| {
                 let actual_line_num = self.scroll_offset + i + 1;
                 let doc_line_idx = self.scroll_offset + i;
                 let line_num_str = if self.show_line_numbers {
                     format!("{:>width$} ", actual_line_num, width = line_num_width - 1)
+                } else {
+                    String::new()
+                };
+
+                // Get the line from document
+                let line = if doc_line_idx < doc.line_count() {
+                    doc.get_line(doc_line_idx).unwrap_or_default()
                 } else {
                     String::new()
                 };

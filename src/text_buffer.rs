@@ -70,7 +70,6 @@ impl TextBuffer {
         self.insert(pos, "\n");
     }
 
-    #[cfg(test)]
     pub fn get_text(&self) -> String {
         let text = self.piece_table.get_text();
         match self.line_ending {

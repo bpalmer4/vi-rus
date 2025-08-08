@@ -86,20 +86,11 @@ impl SearchState {
             None => return Ok(()), // No pattern to search
         };
 
-        // Find all matches in document
-        let lines = if document.use_piece_table {
-            if let Some(ref text_buffer) = document.text_buffer {
-                let mut text_buffer = text_buffer.clone();
-                text_buffer.get_lines()
-            } else {
-                Vec::new()
-            }
-        } else {
-            document.lines.clone()
-        };
-
-        for (line_idx, line) in lines.iter().enumerate() {
-            for mat in regex.find_iter(line) {
+        // Find all matches in document using line-by-line approach
+        let line_count = document.line_count();
+        for line_idx in 0..line_count {
+            let line = document.get_line(line_idx).unwrap_or_default();
+            for mat in regex.find_iter(&line) {
                 self.matches.push(SearchMatch {
                     line: line_idx,
                     start_col: mat.start(),
@@ -274,55 +265,23 @@ impl SearchReplace {
         case_sensitive: bool,
     ) -> Result<usize, SearchError> {
         let mut total_replacements = 0;
-        let line_count = if document.use_piece_table {
-            if let Some(ref text_buffer) = document.text_buffer {
-                let mut text_buffer = text_buffer.clone();
-                text_buffer.line_count()
-            } else {
-                0
-            }
-        } else {
-            document.line_count()
-        };
+        let line_count = document.line_count();
         let actual_end_line = end_line.min(line_count.saturating_sub(1));
 
         for line_idx in start_line..=actual_end_line {
-            if document.use_piece_table {
-                if let Some(ref mut text_buffer) = document.text_buffer {
-                    if let Some(line) = text_buffer.get_line(line_idx) {
-                        let (new_line, replacements) =
-                            Self::substitute_line(&line, pattern, replacement, global, case_sensitive)?;
+            if line_idx < document.line_count() {
+                let line = document.get_line(line_idx).unwrap_or_default();
+                let (new_line, replacements) =
+                    Self::substitute_line(&line, pattern, replacement, global, case_sensitive)?;
 
-                        if replacements > 0 {
-                            // Replace entire line in piece table
-                            let start_pos = crate::text_buffer::Position::new(line_idx, 0);
-                            let end_pos = crate::text_buffer::Position::new(line_idx, text_buffer.line_length(line_idx));
-                            let range = crate::text_buffer::Range::new(start_pos, end_pos);
-                            text_buffer.replace(range, &new_line);
-                            total_replacements += replacements;
-                        }
-                    }
-                }
-            } else {
-                if let Some(line) = document.lines.get_mut(line_idx) {
-                    let (new_line, replacements) =
-                        Self::substitute_line(line, pattern, replacement, global, case_sensitive)?;
-
-                    if replacements > 0 {
-                        *line = new_line;
-                        total_replacements += replacements;
-                    }
+                if replacements > 0 {
+                    document.set_line(line_idx, &new_line);
+                    total_replacements += replacements;
                 }
             }
         }
 
         if total_replacements > 0 {
-            // Sync piece table changes back to Vec<String>
-            if document.use_piece_table {
-                if let Some(ref mut text_buffer) = document.text_buffer {
-                    document.lines = text_buffer.to_lines();
-                }
-            }
             document.modified = true;
         }
 
@@ -335,16 +294,7 @@ impl SearchReplace {
         replacement: &str,
         case_sensitive: bool,
     ) -> Result<usize, SearchError> {
-        let line_count = if document.use_piece_table {
-            if let Some(ref text_buffer) = document.text_buffer {
-                let mut text_buffer = text_buffer.clone();
-                text_buffer.line_count()
-            } else {
-                0
-            }
-        } else {
-            document.line_count()
-        };
+        let line_count = document.line_count();
         
         if line_count == 0 {
             return Ok(0);

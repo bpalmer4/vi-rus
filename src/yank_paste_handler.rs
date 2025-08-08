@@ -3,16 +3,7 @@ use crate::document::Document;
 
 // Helper function to get line count efficiently
 fn get_line_count(document: &Document) -> usize {
-    if document.use_piece_table {
-        if let Some(ref text_buffer) = document.text_buffer {
-            let mut text_buffer = text_buffer.clone();
-            text_buffer.line_count()
-        } else {
-            0
-        }
-    } else {
-        document.lines.len()
-    }
+    document.line_count()
 }
 use crate::registers::RegisterType;
 use crate::visual_mode::VisualModeHandler;
@@ -109,7 +100,7 @@ impl YankPasteHandler {
                 for i in 0..*count {
                     let line_idx = document.cursor_line + i;
                     if line_idx < get_line_count(document) {
-                        lines.push(document.lines[line_idx].clone());
+                        lines.push(document.get_line(line_idx).unwrap_or_default());
                     } else {
                         break;
                     }
@@ -176,7 +167,7 @@ impl YankPasteHandler {
         };
 
         for (i, line) in lines.iter().enumerate() {
-            document.lines.insert(insert_line + i, line.to_string());
+            document.insert_line_at(insert_line + i, line);
         }
 
         // Move cursor to first line of pasted content
@@ -186,12 +177,12 @@ impl YankPasteHandler {
 
     fn paste_character_wise(document: &mut Document, content: &str, paste_type: &PasteType) {
         if document.cursor_line < get_line_count(document) {
-            let line = &mut document.lines[document.cursor_line];
+            let line_length = document.get_line_length(document.cursor_line);
             let mut insert_col = document.cursor_column;
 
             match paste_type {
                 PasteType::After => {
-                    if insert_col < line.len() {
+                    if insert_col < line_length {
                         insert_col += 1; // Move cursor after current character
                     }
                 }
@@ -200,9 +191,12 @@ impl YankPasteHandler {
                 }
             }
 
-            if insert_col <= line.len() {
-                line.insert_str(insert_col, content);
+            if insert_col <= line_length {
+                use crate::text_buffer::Position;
+                let pos = Position::new(document.cursor_line, insert_col);
+                document.text_buffer.insert(pos, content);
                 document.cursor_column = insert_col + content.len() - 1;
+                document.modified = true;
             }
         }
     }

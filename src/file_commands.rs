@@ -33,16 +33,7 @@ impl Controller {
         let doc = self.current_document();
         let filename = self.get_display_filename();
         let current_line = doc.cursor_line + 1;
-        let total_lines = if doc.use_piece_table {
-            if let Some(ref text_buffer) = doc.text_buffer {
-                let mut text_buffer = text_buffer.clone();
-                text_buffer.line_count()
-            } else {
-                0
-            }
-        } else {
-            doc.lines.len()
-        };
+        let total_lines = doc.line_count();
         let percentage = if total_lines > 0 {
             (current_line * 100) / total_lines
         } else {
@@ -183,16 +174,7 @@ impl Controller {
 
     pub fn handle_read_at_end_command(&mut self, cmd: &str) -> bool {
         let rest = cmd[3..].trim();
-        let line_num = if self.current_document().use_piece_table {
-            if let Some(ref text_buffer) = self.current_document().text_buffer {
-                let mut text_buffer = text_buffer.clone();
-                text_buffer.line_count()
-            } else {
-                0
-            }
-        } else {
-            self.current_document().lines.len()
-        };
+        let line_num = self.current_document().line_count();
         if rest.starts_with('!') {
             self.execute_and_insert_at_line(rest.strip_prefix('!').unwrap(), line_num)
         } else {
@@ -238,14 +220,7 @@ impl Controller {
                     Ok(bytes) => {
                         let location = match line_num {
                             0 => "at top".to_string(),
-                            n if n == {
-                                if self.current_document().use_piece_table {
-                                    if let Some(ref text_buffer) = self.current_document().text_buffer {
-                                        let mut text_buffer = text_buffer.clone();
-                                        text_buffer.line_count()
-                                    } else { 0 }
-                                } else { self.current_document().lines.len() }
-                            } => {
+                            n if n == self.current_document().line_count() => {
                                 "at end".to_string()
                             }
                             n => format!("after line {n}"),
@@ -278,14 +253,7 @@ impl Controller {
             Ok(bytes) => {
                 let location = match line_num {
                     0 => "at top".to_string(),
-                    n if n == {
-                        if self.current_document().use_piece_table {
-                            if let Some(ref text_buffer) = self.current_document().text_buffer {
-                                let mut text_buffer = text_buffer.clone();
-                                text_buffer.line_count()
-                            } else { 0 }
-                        } else { self.current_document().lines.len() }
-                    } => "at end".to_string(),
+                    n if n == self.current_document().line_count() => "at end".to_string(),
                     n => format!("after line {n}"),
                 };
                 self.status_message = format!("\"{filename}\" {bytes}B inserted {location}");
@@ -373,22 +341,8 @@ impl Controller {
                             "{} substitution{} across {} line{}",
                             count,
                             if count == 1 { "" } else { "s" },
-                            {
-                                if self.current_document().use_piece_table {
-                                    if let Some(ref text_buffer) = self.current_document().text_buffer {
-                                        let mut text_buffer = text_buffer.clone();
-                                        text_buffer.line_count()
-                                    } else { 0 }
-                                } else { self.current_document().lines.len() }
-                            },
-                            if {
-                                if self.current_document().use_piece_table {
-                                    if let Some(ref text_buffer) = self.current_document().text_buffer {
-                                        let mut text_buffer = text_buffer.clone();
-                                        text_buffer.line_count()
-                                    } else { 0 }
-                                } else { self.current_document().lines.len() }
-                            } == 1 {
+                            self.current_document().line_count(),
+                            if self.current_document().line_count() == 1 {
                                 ""
                             } else {
                                 "s"
