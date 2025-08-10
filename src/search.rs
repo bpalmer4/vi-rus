@@ -202,6 +202,54 @@ impl SearchState {
     pub fn current_match_index(&self) -> Option<usize> {
         self.current_match.map(|idx| idx + 1) // 1-based for display
     }
+
+    pub fn next(&mut self, document: &mut crate::document::Document, status_message: &mut String) {
+        if self.pattern.is_empty() {
+            *status_message = "No previous search pattern".to_string();
+        } else if let Some(search_match) = self.repeat_last_search(document.cursor_line, document.cursor_column) {
+            document.cursor_line = search_match.line;
+            document.cursor_column = search_match.start_col;
+        } else {
+            *status_message = format!("Pattern not found: {}", self.pattern);
+        }
+    }
+
+    pub fn previous(&mut self, document: &mut crate::document::Document, status_message: &mut String) {
+        if self.pattern.is_empty() {
+            *status_message = "No previous search pattern".to_string();
+        } else if let Some(search_match) = self.repeat_last_search_reverse(document.cursor_line, document.cursor_column) {
+            document.cursor_line = search_match.line;
+            document.cursor_column = search_match.start_col;
+        } else {
+            *status_message = format!("Pattern not found: {}", self.pattern);
+        }
+    }
+
+    pub fn search_word_forward(&mut self, document: &mut crate::document::Document, status_message: &mut String) {
+        if let Some(word) = document.get_word_under_cursor() {
+            let _ = self.set_pattern(word, SearchDirection::Forward);
+            let _ = self.search_document(document);
+            if let Some(search_match) = self.find_next_match(document.cursor_line, document.cursor_column) {
+                document.cursor_line = search_match.line;
+                document.cursor_column = search_match.start_col;
+            }
+        } else {
+            *status_message = "No word under cursor".to_string();
+        }
+    }
+
+    pub fn search_word_backward(&mut self, document: &mut crate::document::Document, status_message: &mut String) {
+        if let Some(word) = document.get_word_under_cursor() {
+            let _ = self.set_pattern(word, SearchDirection::Backward);
+            let _ = self.search_document(document);
+            if let Some(search_match) = self.find_prev_match(document.cursor_line, document.cursor_column) {
+                document.cursor_line = search_match.line;
+                document.cursor_column = search_match.start_col;
+            }
+        } else {
+            *status_message = "No word under cursor".to_string();
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

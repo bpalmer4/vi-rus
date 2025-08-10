@@ -1,4 +1,4 @@
-use crate::controller::Mode;
+use crate::command::Mode;
 use crate::document::Document;
 use crate::search::SearchState;
 use crate::visual_mode::Selection;

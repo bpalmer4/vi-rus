@@ -261,4 +261,40 @@ impl BufferManager {
             Err(e) => Err(e),
         }
     }
+
+    pub fn yank_text(&mut self, yank_type: crate::yank_paste_handler::YankType, register: Option<char>, register_manager: &mut crate::registers::RegisterManager, status_message: &mut String) {
+        crate::yank_paste_handler::YankPasteHandler::execute_yank_simple(self.current_document(), yank_type, register, register_manager, status_message);
+    }
+
+    pub fn paste_text(&mut self, paste_type: crate::yank_paste_handler::PasteType, register: Option<char>, register_manager: &mut crate::registers::RegisterManager, status_message: &mut String) {
+        crate::yank_paste_handler::YankPasteHandler::execute_paste_simple(self.current_document_mut(), paste_type, register, register_manager, status_message);
+    }
+
+    pub fn execute_indent_command(&mut self, command: crate::command::Command, status_message: &mut String) {
+        use crate::command::Command;
+        let tab_width = 4; // Could be configurable
+        let use_spaces = true; // Could be configurable
+        
+        match command {
+            Command::IndentLine => {
+                self.current_document_mut().indent_line(tab_width, use_spaces);
+                *status_message = "Line indented".to_string();
+            }
+            Command::IndentLines(count) => {
+                let current_line = self.current_document().cursor_line;
+                self.current_document_mut().indent_lines(current_line, count, tab_width, use_spaces);
+                *status_message = format!("{} lines indented", count);
+            }
+            Command::DedentLine => {
+                self.current_document_mut().dedent_line(tab_width);
+                *status_message = "Line dedented".to_string();
+            }
+            Command::DedentLines(count) => {
+                let current_line = self.current_document().cursor_line;
+                self.current_document_mut().dedent_lines(current_line, count, tab_width);
+                *status_message = format!("{} lines dedented", count);
+            }
+            _ => {}
+        }
+    }
 }

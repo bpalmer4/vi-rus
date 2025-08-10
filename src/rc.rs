@@ -1,4 +1,4 @@
-use crate::controller::Controller;
+// use crate::controller::Controller; // Old Controller no longer used
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -161,27 +161,27 @@ impl RcLoader {
         }
     }
 
-    /// Apply the configuration to a controller
-    pub fn apply_config(controller: &mut Controller, config: &RcConfig) {
+    /// Apply the configuration to the new modular architecture
+    pub fn apply_config_to_shared_state(shared_state: &mut crate::mode_controllers::SharedEditorState, config: &RcConfig) {
         // Apply view settings
-        controller.view.set_tab_stop(config.tab_stop);
-        controller.view.set_line_numbers(config.show_line_numbers);
-        controller.view.set_show_whitespace(config.show_whitespace);
+        shared_state.view.set_tab_stop(config.tab_stop);
+        shared_state.view.set_line_numbers(config.show_line_numbers);
+        shared_state.view.set_show_whitespace(config.show_whitespace);
 
         // Apply document settings
-        controller
+        shared_state.buffer_manager
             .current_document_mut()
             .set_expand_tab(config.expand_tab);
 
         // Apply line ending setting
         match config.line_ending.as_str() {
-            "unix" => controller
+            "unix" => shared_state.buffer_manager
                 .current_document_mut()
                 .set_line_ending(crate::document::LineEnding::Unix),
-            "dos" => controller
+            "dos" => shared_state.buffer_manager
                 .current_document_mut()
                 .set_line_ending(crate::document::LineEnding::Windows),
-            "mac" => controller
+            "mac" => shared_state.buffer_manager
                 .current_document_mut()
                 .set_line_ending(crate::document::LineEnding::Mac),
             _ => {} // Default to Unix

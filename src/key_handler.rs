@@ -1,4 +1,4 @@
-use crate::controller::{Command, Mode};
+use crate::command::{Command, Mode};
 use crossterm::event::{KeyCode, KeyModifiers};
 
 pub struct KeyHandler;
@@ -186,6 +186,10 @@ impl KeyHandler {
         pending_register: &mut Option<char>,
     ) -> Option<Command> {
         match key {
+            // Handle '0' specially - if no number prefix exists, it's MoveLineStart
+            KeyCode::Char('0') if number_prefix.is_none() => {
+                Some(Command::MoveLineStart)
+            }
             // Handle numbers for prefixes
             KeyCode::Char(c) if c.is_ascii_digit() => {
                 let digit = c.to_digit(10).unwrap() as usize;
@@ -458,6 +462,12 @@ impl KeyHandler {
                     ('g', 'g') => Some(Command::MoveDocumentStart),
                     ('g', 'u') => Some(Command::Lowercase),
                     ('g', 'U') => Some(Command::Uppercase),
+                    
+                    // Handle character search commands
+                    ('f', target_char) => Some(Command::FindChar(target_char)),
+                    ('F', target_char) => Some(Command::FindCharBackward(target_char)),
+                    ('t', target_char) => Some(Command::FindCharBefore(target_char)),
+                    ('T', target_char) => Some(Command::FindCharBeforeBackward(target_char)),
                     _ => {
                         // Invalid sequence, clear state
                         *pending_key = None;
@@ -508,6 +518,22 @@ impl KeyHandler {
                 *pending_key = Some('g');
                 None // Wait for second key (g, u, U)
             }
+            KeyCode::Char('f') => {
+                *pending_key = Some('f');
+                None // Wait for target character
+            }
+            KeyCode::Char('F') => {
+                *pending_key = Some('F');
+                None // Wait for target character
+            }
+            KeyCode::Char('t') => {
+                *pending_key = Some('t');
+                None // Wait for target character
+            }
+            KeyCode::Char('T') => {
+                *pending_key = Some('T');
+                None // Wait for target character
+            }
 
             // Fall back to regular parsing for other keys
             _ => {
@@ -516,7 +542,7 @@ impl KeyHandler {
 
                 // Clear any pending state for non-multi-key commands
                 *pending_key = None;
-                let _count = number_prefix.take();
+                // Don't consume number_prefix here - let the controller handle it
 
                 // Handle register-aware commands
                 match (key, register_char) {

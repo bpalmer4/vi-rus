@@ -1,9 +1,6 @@
-mod buffer_commands;
 mod buffer_manager;
-mod controller;
+mod command;
 mod document;
-mod edit_commands;
-mod file_commands;
 mod help;
 mod key_handler;
 mod marks;
@@ -18,7 +15,15 @@ mod view;
 mod visual_mode;
 mod yank_paste_handler;
 
-use controller::Controller;
+// New modular architecture
+mod mode_controllers;
+mod insert_controller;
+mod normal_controller;
+mod visual_controller;
+mod command_controller;
+mod editor_controller;
+
+use editor_controller::EditorController;
 use rc::RcLoader;
 use std::env;
 use std::path::PathBuf;
@@ -29,15 +34,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Load RC configuration
     let config = RcLoader::load_config();
 
+    // Use the new modular EditorController for testing
     let mut controller = if args.len() > 1 {
         let filenames: Vec<PathBuf> = args[1..].iter().map(PathBuf::from).collect();
-        Controller::new_with_files(filenames)?
+        EditorController::new_with_files(filenames)?
     } else {
-        Controller::new()
+        EditorController::new()
     };
 
     // Apply RC configuration to the controller
-    RcLoader::apply_config(&mut controller, &config);
+    controller.apply_config(&config);
 
     controller.run()
 }

@@ -31,6 +31,49 @@ pub enum UndoAction {
 }
 
 impl UndoAction {
+    /// Apply this undo action to a document
+    pub fn apply_to_document(&self, document: &mut crate::document::Document) {
+        match self {
+            UndoAction::InsertText { line, column, text } => {
+                // Make sure the line exists
+                if *line < document.line_count() {
+                    document.insert_text_at(*line, *column, text);
+                }
+            }
+            UndoAction::DeleteText { line, column, text } => {
+                // Make sure the line exists and has enough content
+                if *line < document.line_count() {
+                    let current_line_len = document.get_line_length(*line);
+                    if *column <= current_line_len {
+                        let end_col = (*column + text.len()).min(current_line_len);
+                        if end_col > *column {
+                            document.delete_text_at(*line, *column, end_col - *column);
+                        }
+                    }
+                }
+            }
+            UndoAction::InsertLine { line, text } => {
+                document.insert_line_at(*line, text);
+            }
+            UndoAction::DeleteLine { line, .. } => {
+                if *line < document.line_count() {
+                    document.delete_line_at(*line);
+                }
+            }
+            UndoAction::SplitLine { line, column, text } => {
+                if *line < document.line_count() {
+                    document.split_line_at(*line, *column, text);
+                }
+            }
+            UndoAction::JoinLines { line, separator, .. } => {
+                // Join the line at `line` with the line at `line + 1`
+                if *line < document.line_count().saturating_sub(1) {
+                    document.join_lines_at(*line, separator);
+                }
+            }
+        }
+    }
+
     pub fn reverse(&self) -> UndoAction {
         match self {
             UndoAction::InsertText { line, column, text } => UndoAction::DeleteText {
@@ -99,6 +142,29 @@ impl UndoGroup {
 
     pub fn is_empty(&self) -> bool {
         self.actions.is_empty()
+    }
+
+    /// Apply this undo group to a document (for redo operations)
+    pub fn apply_to_document(&self, document: &mut crate::document::Document) {
+        // Apply actions in forward order for redo
+        for action in &self.actions {
+            action.apply_to_document(document);
+        }
+        // Set cursor to after position
+        document.cursor_line = self.cursor_after.0.min(document.line_count().saturating_sub(1));
+        document.cursor_column = self.cursor_after.1.min(document.get_line_length(document.cursor_line));
+    }
+
+    /// Apply the reverse of this undo group to a document (for undo operations)  
+    pub fn apply_reverse_to_document(&self, document: &mut crate::document::Document) {
+        // Apply reverse actions in reverse order for undo
+        for action in self.actions.iter().rev() {
+            let reverse_action = action.reverse();
+            reverse_action.apply_to_document(document);
+        }
+        // Set cursor to before position
+        document.cursor_line = self.cursor_before.0.min(document.line_count().saturating_sub(1));
+        document.cursor_column = self.cursor_before.1.min(document.get_line_length(document.cursor_line));
     }
 }
 

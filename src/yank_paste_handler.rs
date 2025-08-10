@@ -1,4 +1,3 @@
-use crate::controller::Controller;
 use crate::document::Document;
 
 // Helper function to get line count efficiently
@@ -6,7 +5,6 @@ fn get_line_count(document: &Document) -> usize {
     document.line_count()
 }
 use crate::registers::RegisterType;
-use crate::visual_mode::VisualModeHandler;
 
 pub struct YankPasteHandler;
 
@@ -38,59 +36,6 @@ pub enum PasteType {
 }
 
 impl YankPasteHandler {
-    pub fn execute_yank(controller: &mut Controller, yank_type: YankType, register: Option<char>) {
-        let (text, register_type) =
-            Self::get_yank_content(&yank_type, controller.current_document());
-
-        // Store in register
-        controller
-            .register_manager
-            .store_in_register(register, text.clone(), register_type);
-
-        // Show feedback message
-        Self::show_yank_feedback(&mut controller.status_message, &text, register);
-    }
-
-    pub fn execute_paste(
-        controller: &mut Controller,
-        paste_type: PasteType,
-        register: Option<char>,
-    ) {
-        if let Some(register_data) = controller.register_manager.get_register_content(register) {
-            let content = register_data.content.clone();
-            let register_type = register_data.register_type.clone();
-
-            Self::paste_content(
-                controller.current_document_mut(),
-                &content,
-                &register_type,
-                &paste_type,
-            );
-        }
-    }
-
-    pub fn execute_visual_yank(controller: &mut Controller, register: Option<char>) {
-        if let Some(selection) = controller.visual_selection.as_ref() {
-            let text =
-                VisualModeHandler::get_selected_text(selection, controller.current_document());
-            let register_type = match selection.mode {
-                crate::visual_mode::VisualMode::Line => RegisterType::Line,
-                crate::visual_mode::VisualMode::Char => RegisterType::Character,
-                crate::visual_mode::VisualMode::Block => RegisterType::Block,
-            };
-
-            controller
-                .register_manager
-                .store_in_register(register, text.clone(), register_type);
-
-            // Show feedback message
-            Self::show_visual_yank_feedback(&mut controller.status_message, &text, register);
-
-            // Exit visual mode after yank
-            controller.visual_selection = None;
-            controller.mode = crate::controller::Mode::Normal;
-        }
-    }
 
     fn get_yank_content(yank_type: &YankType, document: &Document) -> (String, RegisterType) {
         match yank_type {
@@ -235,5 +180,22 @@ impl YankPasteHandler {
             Some(reg) => format!("{base_message} to register {reg}"),
             None => base_message,
         };
+    }
+
+    pub fn execute_yank_simple(document: &crate::document::Document, yank_type: YankType, register: Option<char>, register_manager: &mut crate::registers::RegisterManager, status_message: &mut String) {
+        let (text, register_type) = Self::get_yank_content(&yank_type, document);
+        register_manager.store_in_register(register, text.clone(), register_type);
+        Self::show_yank_feedback(status_message, &text, register);
+    }
+
+    pub fn execute_paste_simple(document: &mut crate::document::Document, paste_type: PasteType, register: Option<char>, register_manager: &mut crate::registers::RegisterManager, status_message: &mut String) {
+        if let Some(register_data) = register_manager.get_register_content(register) {
+            let content = register_data.content.clone();
+            let register_type = register_data.register_type.clone();
+            Self::paste_content(document, &content, &register_type, &paste_type);
+            *status_message = "Text pasted".to_string();
+        } else {
+            *status_message = "Register empty".to_string();
+        }
     }
 }
