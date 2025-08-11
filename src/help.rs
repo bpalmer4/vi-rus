@@ -238,6 +238,13 @@ pub fn create_help_document() -> Document {
         "  :set nolist - Hide whitespace characters".to_string(),
         "  :detab - Convert all tabs to spaces".to_string(),
         "  :retab - Convert all spaces to tabs".to_string(),
+        "  :ascii - Normalize Unicode characters to ASCII equivalents".to_string(),
+        "  :normalize - Same as :ascii".to_string(),
+        "  :brackets - Check for unmatched brackets".to_string(),
+        "  :checkbrackets - Same as :brackets".to_string(),
+        "  :redraw - Force screen refresh".to_string(),
+        "  :scroll - Show scroll information".to_string(),
+        "  :resetscroll - Reset scroll position".to_string(),
         "".to_string(),
         "EDIT OPERATIONS:".to_string(),
         "  :paste - Paste from clipboard".to_string(),
@@ -281,6 +288,8 @@ pub fn create_help_document() -> Document {
         "  Ctrl+l - Force screen redraw".to_string(),
         "".to_string(),
         "Press :bd to close this help buffer".to_string(),
+        "".to_string(),
+        "😊".to_string(),
     ];
 
     // Create a document with the help content using TextBuffer's from_string method

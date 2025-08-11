@@ -105,8 +105,7 @@ impl ModeController for VisualController {
                     // Update selection end position
                     if let Some(selection) = &mut self.visual_selection {
                         let doc = shared.buffer_manager.current_document();
-                        selection.end_line = doc.cursor_line;
-                        selection.end_column = doc.cursor_column;
+                        selection.update_end(doc.cursor_line, doc.cursor_column);
                     }
                 }
                 

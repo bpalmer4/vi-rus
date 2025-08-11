@@ -90,8 +90,11 @@ impl TextBuffer {
     }
 
     pub fn get_lines(&mut self) -> Vec<String> {
-        self.piece_table.get_lines_fast()
+        (0..self.line_count())
+            .filter_map(|i| self.get_line(i))
+            .collect()
     }
+
 
     pub fn line_count(&mut self) -> usize {
         self.piece_table.line_count()
@@ -144,16 +147,6 @@ impl TextBuffer {
         self.piece_table.insert(start_offset, replacement);
     }
 
-    // Convert TextBuffer back to Vec<String> format for compatibility
-    pub fn to_lines(&mut self) -> Vec<String> {
-        self.get_lines()
-    }
-
-    // Update from Vec<String> format for compatibility  
-    pub fn from_lines_update(&mut self, lines: Vec<String>) {
-        let content = lines.join("\n");
-        *self = Self::from_string(content);
-    }
 }
 
 impl Clone for TextBuffer {

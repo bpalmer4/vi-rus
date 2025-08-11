@@ -151,7 +151,7 @@ impl MarkManager {
 
     /// Clear all marks (global and special marks)
     pub fn clear_all_marks(&mut self) {
-        self.global_marks.clear();
+        self.clear_global_marks();
         self.last_jump = None;
         self.last_change = None;
         self.last_insert = None;

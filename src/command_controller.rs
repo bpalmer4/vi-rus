@@ -109,14 +109,14 @@ impl CommandController {
                 Some(false)
             }
             "bd" | "bdelete" => {
-                match shared.buffer_manager.close_buffer() {
+                match shared.buffer_manager.close_buffer(&mut shared.mark_manager) {
                     Ok(msg) => shared.status_message = msg,
                     Err(msg) => shared.status_message = msg,
                 }
                 Some(false)
             }
             "bd!" => {
-                match shared.buffer_manager.force_close_buffer() {
+                match shared.buffer_manager.force_close_buffer(&mut shared.mark_manager) {
                     Ok(msg) => shared.status_message = msg,
                     Err(msg) => shared.status_message = msg,
                 }
@@ -311,6 +311,49 @@ impl CommandController {
                 };
                 Some(false)
             }
+            "ascii" | "normalize" => {
+                let count = shared.buffer_manager.current_document_mut().ascii_normalize();
+                shared.status_message = if count == 0 {
+                    "No Unicode characters found to normalize".to_string()
+                } else if count == 1 {
+                    "1 line normalized to ASCII".to_string()
+                } else {
+                    format!("{} lines normalized to ASCII", count)
+                };
+                Some(false)
+            }
+            "brackets" | "checkbrackets" => {
+                let unmatched = shared.buffer_manager.current_document().find_all_unmatched_brackets();
+                if unmatched.is_empty() {
+                    shared.status_message = "All brackets are properly matched".to_string();
+                } else {
+                    let mut msg = format!("Found {} unmatched bracket(s):\n", unmatched.len());
+                    for (line, col) in unmatched.iter().take(10) { // Limit to first 10
+                        msg.push_str(&format!("  Line {}, Column {}\n", line + 1, col + 1));
+                    }
+                    if unmatched.len() > 10 {
+                        msg.push_str(&format!("  ... and {} more", unmatched.len() - 10));
+                    }
+                    shared.status_message = msg;
+                }
+                Some(false)
+            }
+            "redraw" => {
+                shared.view.force_redraw();
+                shared.status_message = "Screen refreshed".to_string();
+                Some(false)
+            }
+            "scroll" => {
+                let offset = shared.view.get_scroll_offset();
+                let visible = shared.view.get_visible_lines_count();
+                shared.status_message = format!("Scroll offset: {}, Visible lines: {}", offset, visible);
+                Some(false)
+            }
+            "resetscroll" => {
+                shared.view.reset_scroll();
+                shared.status_message = "Scroll position reset".to_string();
+                Some(false)
+            }
             "e" => {
                 // Create new empty buffer
                 shared.status_message = shared.buffer_manager.create_new_buffer();
@@ -412,6 +455,11 @@ impl CommandController {
         // Handle numeric line jumps like ":42"
         if let Ok(line_num) = trimmed.parse::<usize>() {
             if line_num > 0 {
+                // Add current position to jump list before jumping
+                let doc = shared.buffer_manager.current_document();
+                let current_filename = doc.filename.clone();
+                shared.mark_manager.add_to_jump_list(doc.cursor_line, doc.cursor_column, current_filename);
+                
                 let doc = shared.buffer_manager.current_document_mut();
                 doc.cursor_line = (line_num - 1).min(doc.line_count().saturating_sub(1)); // Convert to 0-based and clamp
                 doc.cursor_column = 0;
@@ -524,6 +572,9 @@ impl CommandController {
                 Some(false)
             }
             "clear marks" => {
+                // Clear local marks in current document
+                shared.buffer_manager.current_document_mut().clear_local_marks();
+                // Clear global marks in mark manager
                 shared.mark_manager.clear_all_marks();
                 shared.status_message = "All marks cleared".to_string();
                 Some(false)

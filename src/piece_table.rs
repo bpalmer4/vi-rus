@@ -397,22 +397,6 @@ impl PieceTable {
         }
     }
 
-    pub fn get_lines_fast(&mut self) -> Vec<String> {
-        if !self.line_index.valid {
-            self.rebuild_line_index();
-        }
-
-        let mut lines = Vec::new();
-        let line_count = self.line_index.line_count();
-
-        for i in 0..line_count {
-            if let Some(line) = self.get_line_fast(i) {
-                lines.push(line);
-            }
-        }
-
-        lines
-    }
 
     pub fn position_to_offset(&mut self, line: usize, column: usize) -> usize {
         if !self.line_index.valid {

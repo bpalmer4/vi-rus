@@ -167,7 +167,7 @@ impl BufferManager {
         }
     }
 
-    pub fn close_buffer(&mut self) -> Result<String, String> {
+    pub fn close_buffer(&mut self, mark_manager: &mut crate::marks::MarkManager) -> Result<String, String> {
         if self.buffers.len() == 1 {
             return Err("Cannot close last buffer".to_string());
         }
@@ -179,25 +179,33 @@ impl BufferManager {
             );
         }
 
+        let closed_filename = current_doc.filename.clone();
         self.buffers.remove(self.current_buffer);
         if self.current_buffer >= self.buffers.len() {
             self.current_buffer = self.buffers.len() - 1;
         }
+
+        // Clean up marks for closed buffer
+        mark_manager.cleanup_for_closed_buffer(closed_filename.as_ref());
 
         let filename = self.get_display_filename();
         Ok(format!("Buffer closed. Current: \"{filename}\""))
     }
 
-    pub fn force_close_buffer(&mut self) -> Result<String, String> {
+    pub fn force_close_buffer(&mut self, mark_manager: &mut crate::marks::MarkManager) -> Result<String, String> {
         if self.buffers.len() == 1 {
             return Err("Cannot close last buffer".to_string());
         }
 
         let filename = self.get_display_filename().to_string();
+        let closed_filename = self.buffers[self.current_buffer].filename.clone();
         self.buffers.remove(self.current_buffer);
         if self.current_buffer >= self.buffers.len() {
             self.current_buffer = self.buffers.len() - 1;
         }
+
+        // Clean up marks for closed buffer
+        mark_manager.cleanup_for_closed_buffer(closed_filename.as_ref());
 
         let new_filename = self.get_display_filename();
         Ok(format!(

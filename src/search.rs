@@ -209,6 +209,11 @@ impl SearchState {
         } else if let Some(search_match) = self.repeat_last_search(document.cursor_line, document.cursor_column) {
             document.cursor_line = search_match.line;
             document.cursor_column = search_match.start_col;
+            
+            // Show match index if available
+            if let Some(index) = self.current_match_index() {
+                *status_message = format!("Found '{}' (match {})", self.pattern, index);
+            }
         } else {
             *status_message = format!("Pattern not found: {}", self.pattern);
         }
@@ -220,6 +225,11 @@ impl SearchState {
         } else if let Some(search_match) = self.repeat_last_search_reverse(document.cursor_line, document.cursor_column) {
             document.cursor_line = search_match.line;
             document.cursor_column = search_match.start_col;
+            
+            // Show match index if available
+            if let Some(index) = self.current_match_index() {
+                *status_message = format!("Found '{}' (match {})", self.pattern, index);
+            }
         } else {
             *status_message = format!("Pattern not found: {}", self.pattern);
         }

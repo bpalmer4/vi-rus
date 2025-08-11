@@ -520,9 +520,17 @@ impl NormalController {
 
             // Document movement
             Command::MoveDocumentStart => {
+                // Add current position to jump list before jumping
+                let doc = shared.buffer_manager.current_document();
+                let filename = shared.buffer_manager.current_document().filename.clone();
+                shared.mark_manager.add_to_jump_list(doc.cursor_line, doc.cursor_column, filename);
                 shared.buffer_manager.current_document_mut().move_document_start();
             }
             Command::MoveDocumentEnd => {
+                // Add current position to jump list before jumping
+                let doc = shared.buffer_manager.current_document();
+                let filename = shared.buffer_manager.current_document().filename.clone();
+                shared.mark_manager.add_to_jump_list(doc.cursor_line, doc.cursor_column, filename);
                 shared.buffer_manager.current_document_mut().move_document_end();
             }
             Command::MovePageUp => {
@@ -743,6 +751,11 @@ impl NormalController {
                 }
             }
             Command::JumpToMark(mark_char) => {
+                // Add current position to jump list before jumping
+                let doc = shared.buffer_manager.current_document();
+                let current_filename = doc.filename.clone();
+                shared.mark_manager.add_to_jump_list(doc.cursor_line, doc.cursor_column, current_filename);
+                
                 if mark_char.is_ascii_lowercase() {
                     if let Some((line, column)) = shared.buffer_manager.current_document().get_local_mark(mark_char) {
                         shared.buffer_manager.current_document_mut().cursor_line = line;
@@ -754,6 +767,11 @@ impl NormalController {
                 }
             }
             Command::JumpToMarkLine(mark_char) => {
+                // Add current position to jump list before jumping
+                let doc = shared.buffer_manager.current_document();
+                let current_filename = doc.filename.clone();
+                shared.mark_manager.add_to_jump_list(doc.cursor_line, doc.cursor_column, current_filename);
+                
                 if mark_char.is_ascii_lowercase() {
                     if let Some((line, _)) = shared.buffer_manager.current_document().get_local_mark(mark_char) {
                         shared.buffer_manager.current_document_mut().cursor_line = line;
@@ -766,12 +784,20 @@ impl NormalController {
             }
             Command::JumpBackward => {
                 if let Some(entry) = shared.mark_manager.jump_backward().cloned() {
+                    // Update the '' (last jump) mark before jumping
+                    let doc = shared.buffer_manager.current_document();
+                    shared.mark_manager.set_last_jump(doc.cursor_line, doc.cursor_column);
+                    
                     shared.buffer_manager.current_document_mut().cursor_line = entry.line;
                     shared.buffer_manager.current_document_mut().cursor_column = entry.column;
                 }
             }
             Command::JumpForward => {
                 if let Some(entry) = shared.mark_manager.jump_forward().cloned() {
+                    // Update the '' (last jump) mark before jumping
+                    let doc = shared.buffer_manager.current_document();
+                    shared.mark_manager.set_last_jump(doc.cursor_line, doc.cursor_column);
+                    
                     shared.buffer_manager.current_document_mut().cursor_line = entry.line;
                     shared.buffer_manager.current_document_mut().cursor_column = entry.column;
                 }
@@ -781,6 +807,16 @@ impl NormalController {
     }
 
     fn execute_search_command(&mut self, command: Command, shared: &mut SharedEditorState) {
+        // Add current position to jump list for major search movements
+        match command {
+            Command::SearchWordUnderCursor | Command::SearchWordUnderCursorBackward => {
+                let doc = shared.buffer_manager.current_document();
+                let current_filename = doc.filename.clone();
+                shared.mark_manager.add_to_jump_list(doc.cursor_line, doc.cursor_column, current_filename);
+            }
+            _ => {}
+        }
+        
         match command {
             Command::SearchNext => shared.search_state.next(shared.buffer_manager.current_document_mut(), &mut shared.status_message),
             Command::SearchPrevious => shared.search_state.previous(shared.buffer_manager.current_document_mut(), &mut shared.status_message),

@@ -164,23 +164,6 @@ impl YankPasteHandler {
         };
     }
 
-    fn show_visual_yank_feedback(status_message: &mut String, text: &str, register: Option<char>) {
-        let word_count = text.split_whitespace().count();
-        let line_count = text.lines().count();
-
-        let base_message = if line_count > 1 {
-            format!("{line_count} lines yanked")
-        } else if word_count > 1 {
-            format!("{word_count} words yanked")
-        } else {
-            "Selection yanked".to_string()
-        };
-
-        *status_message = match register {
-            Some(reg) => format!("{base_message} to register {reg}"),
-            None => base_message,
-        };
-    }
 
     pub fn execute_yank_simple(document: &crate::document::Document, yank_type: YankType, register: Option<char>, register_manager: &mut crate::registers::RegisterManager, status_message: &mut String) {
         let (text, register_type) = Self::get_yank_content(&yank_type, document);

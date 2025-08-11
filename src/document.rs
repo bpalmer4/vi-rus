@@ -12,21 +12,6 @@ pub enum LineEnding {
 }
 
 impl LineEnding {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            LineEnding::Unix => "\n",
-            LineEnding::Windows => "\r\n",
-            LineEnding::Mac => "\r",
-        }
-    }
-
-    pub fn name(&self) -> &'static str {
-        match self {
-            LineEnding::Unix => "unix",
-            LineEnding::Windows => "dos",
-            LineEnding::Mac => "mac",
-        }
-    }
 
     pub fn system_default() -> Self {
         if cfg!(windows) {
@@ -145,11 +130,6 @@ impl Document {
         self.modified = true;
     }
     
-    // Get all lines as a vector (for compatibility during migration)
-    pub fn get_all_lines(&self) -> Vec<String> {
-        let mut text_buffer = self.text_buffer.clone();
-        text_buffer.get_lines()
-    }
     
     // Check if document is empty
     pub fn is_empty(&self) -> bool {
@@ -192,6 +172,9 @@ impl Document {
             self.text_buffer.insert(pos, &format!("{}\n", text));
         }
         self.modified = true;
+        
+        // Update marks: new line inserted at line_num
+        self.update_marks_line_inserted(line_num);
     }
 
     // Delete a line using piece table
@@ -217,6 +200,10 @@ impl Document {
         let range = Range::new(start_pos, end_pos);
         self.text_buffer.delete(range);
         self.modified = true;
+        
+        // Update marks: line deleted at line_num
+        self.update_marks_line_deleted(line_num);
+        
         line_content
     }
 
@@ -232,6 +219,9 @@ impl Document {
             let pos = Position::new(line_num, column);
             self.text_buffer.insert(pos, &format!("\n{}", insert_text));
             self.modified = true;
+            
+            // Update marks: new line created at line_num + 1
+            self.update_marks_line_inserted(line_num + 1);
         }
     }
 
@@ -251,6 +241,9 @@ impl Document {
         self.text_buffer.delete(range.clone());
         self.text_buffer.insert(start_pos, separator);
         self.modified = true;
+        
+        // Update marks: line line_num + 1 was joined (removed)
+        self.update_marks_line_deleted(line_num + 1);
     }
 
 
@@ -312,31 +305,6 @@ impl Document {
         self.insert_text_at_line(text, self.cursor_line + 1)
     }
 
-    pub fn paste_at_cursor(&mut self, text: &str) -> Result<usize, std::io::Error> {
-        if text.is_empty() {
-            return Ok(0);
-        }
-
-        let byte_count = text.len();
-
-        // Use piece table for efficient paste
-        use crate::text_buffer::Position;
-        let pos = Position::new(self.cursor_line, self.cursor_column);
-        self.text_buffer.insert(pos, text);
-        
-        // Update cursor position
-        let newline_count = text.matches('\n').count();
-        if newline_count > 0 {
-            self.cursor_line += newline_count;
-            let last_line = text.split('\n').last().unwrap_or("");
-            self.cursor_column = last_line.len();
-        } else {
-            self.cursor_column += text.len();
-        }
-
-        self.modified = true;
-        Ok(byte_count)
-    }
 
     pub fn insert_text_at_line(
         &mut self,
@@ -443,6 +411,9 @@ impl Document {
         self.cursor_line += 1;
         self.cursor_column = 0;
         self.modified = true;
+        
+        // Update marks: new line created at cursor_line (after increment)
+        self.update_marks_line_inserted(self.cursor_line);
     }
 
     pub fn delete_char(&mut self) {
@@ -981,8 +952,23 @@ impl Document {
                     if let Some(ascii_equivalent) = Self::unicode_to_ascii_fallback(ch) {
                         result.push_str(ascii_equivalent);
                     } else {
-                        // If no ASCII equivalent found, keep the original character
-                        result.push(ch);
+                        // Handle common emojis and symbols
+                        match ch {
+                            '😊' | '😀' | '🙂' => result.push_str(":)"),
+                            '😢' | '😭' | '🥺' => result.push_str(":("),
+                            '❤' | '💖' | '💝' => result.push_str("<3"),
+                            '👍' => result.push_str("(thumbs up)"),
+                            '👎' => result.push_str("(thumbs down)"),
+                            '✅' => result.push_str("[x]"),
+                            '❌' => result.push_str("[!]"),
+                            '🎉' => result.push_str("*"),
+                            // For other Unicode characters (including other emojis), remove them
+                            _ if !ch.is_ascii() => {
+                                // Skip non-ASCII characters that don't have specific mappings
+                            }
+                            // This shouldn't happen since we checked is_ascii() above
+                            _ => result.push(ch),
+                        }
                     }
                 }
             }
@@ -1185,6 +1171,26 @@ impl Document {
     /// Clear all local marks for this buffer
     pub fn clear_local_marks(&mut self) {
         self.local_marks.clear();
+    }
+
+    /// Update marks when a line is inserted (simple vim-like approach)
+    fn update_marks_line_inserted(&mut self, inserted_line: usize) {
+        for (_, (line, _column)) in self.local_marks.iter_mut() {
+            if *line >= inserted_line {
+                *line += 1;
+            }
+        }
+    }
+
+    /// Update marks when a line is deleted (simple vim-like approach)
+    fn update_marks_line_deleted(&mut self, deleted_line: usize) {
+        // Remove marks on the deleted line and move marks below up by 1
+        self.local_marks.retain(|_, (line, _)| *line != deleted_line);
+        for (_, (line, _column)) in self.local_marks.iter_mut() {
+            if *line > deleted_line {
+                *line -= 1;
+            }
+        }
     }
 
     /// Get all local marks for this buffer (for :marks command)
