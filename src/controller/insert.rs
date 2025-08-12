@@ -1,6 +1,6 @@
-use crate::mode_controllers::{ModeController, ModeTransition, SharedEditorState};
-use crate::command::{Mode, Command};
-use crate::key_handler::KeyHandler;
+use crate::controller::shared_state::{ModeController, ModeTransition, SharedEditorState};
+use crate::controller::command_types::{Mode, Command};
+use crate::controller::key_handler::KeyHandler;
 use crossterm::event::{KeyEvent};
 
 pub struct InsertController {

@@ -502,7 +502,10 @@ mod tests {
     #[test]
     fn test_get_lines() {
         let mut table = PieceTable::from_string("Line 1\nLine 2\nLine 3".to_string());
-        let lines = table.get_lines_fast();
+        let line_count = table.line_count();
+        let lines: Vec<String> = (0..line_count)
+            .map(|i| table.get_line_fast(i).unwrap_or_default())
+            .collect();
         assert_eq!(lines.len(), 3);
         assert_eq!(lines[0], "Line 1");
         assert_eq!(lines[1], "Line 2");

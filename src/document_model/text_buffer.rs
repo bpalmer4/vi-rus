@@ -1,5 +1,5 @@
-use crate::document::LineEnding;
-use crate::piece_table::PieceTable;
+use super::document::LineEnding;
+use super::piece_table::PieceTable;
 
 #[derive(Debug, Clone, Copy)]
 pub struct Position {
@@ -215,7 +215,7 @@ mod tests {
         assert_eq!(buffer.get_line(0), Some("Hello".to_string()));
         assert_eq!(buffer.get_line(1), Some("World".to_string()));
         
-        let back_to_lines = buffer.to_lines();
+        let back_to_lines = buffer.get_lines();
         assert_eq!(back_to_lines, lines);
     }
 }

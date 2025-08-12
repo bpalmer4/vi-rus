@@ -1,4 +1,4 @@
-use crate::document::Document;
+use crate::document_model::Document;
 
 // Helper function to get line count efficiently
 fn get_line_count(document: &Document) -> usize {

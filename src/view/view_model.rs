@@ -29,11 +29,11 @@ pub trait ViewModel {
 
 /// Concrete implementation that adapts Document to ViewModel
 pub struct DocumentViewModel<'a> {
-    document: &'a crate::document::Document,
+    document: &'a crate::document_model::Document,
 }
 
 impl<'a> DocumentViewModel<'a> {
-    pub fn new(document: &'a crate::document::Document) -> Self {
+    pub fn new(document: &'a crate::document_model::Document) -> Self {
         Self { document }
     }
 }

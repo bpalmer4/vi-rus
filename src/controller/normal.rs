@@ -1,6 +1,6 @@
-use crate::mode_controllers::{ModeController, ModeTransition, SharedEditorState};
-use crate::command::{Mode, Command};
-use crate::key_handler::KeyHandler;
+use crate::controller::shared_state::{ModeController, ModeTransition, SharedEditorState};
+use crate::controller::command_types::{Mode, Command};
+use crate::controller::key_handler::KeyHandler;
 use crossterm::event::{KeyEvent};
 
 // Helper macros to reduce boilerplate
@@ -729,10 +729,10 @@ impl NormalController {
         }
         
         match command {
-            Command::SearchNext => shared.search_state.next(shared.buffer_manager.current_document_mut(), &mut shared.status_message),
-            Command::SearchPrevious => shared.search_state.previous(shared.buffer_manager.current_document_mut(), &mut shared.status_message),
-            Command::SearchWordUnderCursor => shared.search_state.search_word_forward(shared.buffer_manager.current_document_mut(), &mut shared.status_message),
-            Command::SearchWordUnderCursorBackward => shared.search_state.search_word_backward(shared.buffer_manager.current_document_mut(), &mut shared.status_message),
+            Command::SearchNext => crate::controller::search_commands::SearchCommands::next(&mut shared.search_state, shared.buffer_manager.current_document_mut(), &mut shared.status_message),
+            Command::SearchPrevious => crate::controller::search_commands::SearchCommands::previous(&mut shared.search_state, shared.buffer_manager.current_document_mut(), &mut shared.status_message),
+            Command::SearchWordUnderCursor => crate::controller::search_commands::SearchCommands::search_word_forward(&mut shared.search_state, shared.buffer_manager.current_document_mut(), &mut shared.status_message),
+            Command::SearchWordUnderCursorBackward => crate::controller::search_commands::SearchCommands::search_word_backward(&mut shared.search_state, shared.buffer_manager.current_document_mut(), &mut shared.status_message),
             _ => {}
         }
     }

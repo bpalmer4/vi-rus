@@ -1,10 +1,10 @@
-use crate::document::Document;
+use crate::document_model::Document;
 
 // Helper function to get line count efficiently
 fn get_line_count(document: &Document) -> usize {
     document.line_count()
 }
-use crate::registers::RegisterType;
+use crate::document_model::RegisterType;
 
 pub struct YankPasteHandler;
 
@@ -137,7 +137,7 @@ impl YankPasteHandler {
             }
 
             if insert_col <= line_length {
-                use crate::text_buffer::Position;
+                use crate::document_model::Position;
                 let pos = Position::new(document.cursor_line, insert_col);
                 document.text_buffer.insert(pos, content);
                 document.cursor_column = insert_col + content.len() - 1;
@@ -165,13 +165,13 @@ impl YankPasteHandler {
     }
 
 
-    pub fn execute_yank_simple(document: &crate::document::Document, yank_type: YankType, register: Option<char>, register_manager: &mut crate::registers::RegisterManager, status_message: &mut String) {
+    pub fn execute_yank_simple(document: &crate::document_model::Document, yank_type: YankType, register: Option<char>, register_manager: &mut crate::document_model::RegisterManager, status_message: &mut String) {
         let (text, register_type) = Self::get_yank_content(&yank_type, document);
         register_manager.store_in_register(register, text.clone(), register_type);
         Self::show_yank_feedback(status_message, &text, register);
     }
 
-    pub fn execute_paste_simple(document: &mut crate::document::Document, paste_type: PasteType, register: Option<char>, register_manager: &mut crate::registers::RegisterManager, status_message: &mut String) {
+    pub fn execute_paste_simple(document: &mut crate::document_model::Document, paste_type: PasteType, register: Option<char>, register_manager: &mut crate::document_model::RegisterManager, status_message: &mut String) {
         if let Some(register_data) = register_manager.get_register_content(register) {
             let content = register_data.content.clone();
             let register_type = register_data.register_type.clone();

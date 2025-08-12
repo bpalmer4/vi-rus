@@ -130,8 +130,8 @@ pub enum Command {
     ChangeFindCharBackward(char),
 
     // Yank and paste commands (simplified)
-    Yank(crate::yank_paste_handler::YankType, Option<char>),
-    Paste(crate::yank_paste_handler::PasteType, Option<char>),
+    Yank(crate::controller::yank_paste::YankType, Option<char>),
+    Paste(crate::controller::yank_paste::PasteType, Option<char>),
 
     // Visual mode commands
     EnterVisualChar,

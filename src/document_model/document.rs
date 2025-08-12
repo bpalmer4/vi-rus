@@ -1,5 +1,5 @@
-use crate::undo::UndoManager;
-use crate::text_buffer::TextBuffer;
+use super::undo::UndoManager;
+use super::text_buffer::TextBuffer;
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
@@ -115,7 +115,7 @@ impl Document {
     
     // Replace an entire line
     pub fn set_line(&mut self, line_num: usize, new_content: &str) {
-        use crate::text_buffer::{Position, Range};
+        use super::text_buffer::{Position, Range};
         if line_num >= self.line_count() {
             return;
         }
@@ -138,7 +138,7 @@ impl Document {
 
     // Insert text at position using piece table
     pub fn insert_text_at(&mut self, line: usize, column: usize, text: &str) {
-        use crate::text_buffer::Position;
+        use super::text_buffer::Position;
         let pos = Position::new(line, column);
         self.text_buffer.insert(pos, text);
         self.modified = true;
@@ -146,7 +146,7 @@ impl Document {
 
     // Delete text at position using piece table
     pub fn delete_text_at(&mut self, line: usize, column: usize, length: usize) -> String {
-        use crate::text_buffer::{Position, Range};
+        use super::text_buffer::{Position, Range};
         let start_pos = Position::new(line, column);
         let end_pos = Position::new(line, column + length);
         let range = Range::new(start_pos, end_pos);
@@ -158,7 +158,7 @@ impl Document {
 
     // Insert a new line using piece table
     pub fn insert_line_at(&mut self, line_num: usize, text: &str) {
-        use crate::text_buffer::Position;
+        use super::text_buffer::Position;
         if line_num == 0 && self.line_count() == 0 {
             // Special case: inserting into empty document
             self.text_buffer.insert(Position::new(0, 0), text);
@@ -179,7 +179,7 @@ impl Document {
 
     // Delete a line using piece table
     pub fn delete_line_at(&mut self, line_num: usize) -> String {
-        use crate::text_buffer::{Position, Range};
+        use super::text_buffer::{Position, Range};
         if line_num >= self.line_count() {
             return String::new();
         }
@@ -209,7 +209,7 @@ impl Document {
 
     // Split a line at given position using piece table
     pub fn split_line_at(&mut self, line_num: usize, column: usize, insert_text: &str) {
-        use crate::text_buffer::Position;
+        use super::text_buffer::Position;
         if line_num >= self.line_count() {
             return;
         }
@@ -227,7 +227,7 @@ impl Document {
 
     // Join two lines with separator using piece table
     pub fn join_lines_at(&mut self, line_num: usize, separator: &str) {
-        use crate::text_buffer::{Position, Range};
+        use super::text_buffer::{Position, Range};
         if line_num >= self.line_count() - 1 {
             return;
         }
@@ -318,7 +318,7 @@ impl Document {
         let byte_count = text.len();
 
         // Insert after the specified line (0-based internally, but line_num is 1-based from user)
-        use crate::text_buffer::Position;
+        use super::text_buffer::Position;
         let insert_pos = if line_num == 0 {
             // Insert at beginning of document
             Position::new(0, 0)
@@ -372,14 +372,14 @@ impl Document {
     pub fn insert_char(&mut self, c: char) {
         // Record undo action
         self.undo_manager
-            .add_action(crate::undo::UndoAction::InsertText {
+            .add_action(super::undo::UndoAction::InsertText {
                 line: self.cursor_line,
                 column: self.cursor_column,
                 text: c.to_string(),
             });
 
         // Use piece table for insertion
-        use crate::text_buffer::Position;
+        use super::text_buffer::Position;
         let pos = Position::new(self.cursor_line, self.cursor_column);
         self.text_buffer.insert(pos, &c.to_string());
         
@@ -397,14 +397,14 @@ impl Document {
 
         // Record undo action for splitting the line
         self.undo_manager
-            .add_action(crate::undo::UndoAction::SplitLine {
+            .add_action(super::undo::UndoAction::SplitLine {
                 line: self.cursor_line,
                 column: self.cursor_column,
                 text: new_line.clone(),
             });
 
         // Use piece table for newline insertion
-        use crate::text_buffer::Position;
+        use super::text_buffer::Position;
         let pos = Position::new(self.cursor_line, self.cursor_column);
         self.text_buffer.insert_newline(pos);
 
@@ -417,7 +417,7 @@ impl Document {
     }
 
     pub fn delete_char(&mut self) {
-        use crate::text_buffer::Position;
+        use super::text_buffer::Position;
         
         if self.cursor_column > 0 {
             // Delete character before cursor
@@ -425,7 +425,7 @@ impl Document {
             let deleted_char = self.text_buffer.char_at(pos).unwrap_or(' ');
             
             self.undo_manager
-                .add_action(crate::undo::UndoAction::DeleteText {
+                .add_action(super::undo::UndoAction::DeleteText {
                     line: self.cursor_line,
                     column: self.cursor_column - 1,
                     text: deleted_char.to_string(),
@@ -441,7 +441,7 @@ impl Document {
 
             // Record undo action for joining lines
             self.undo_manager
-                .add_action(crate::undo::UndoAction::JoinLines {
+                .add_action(super::undo::UndoAction::JoinLines {
                     line: self.cursor_line - 1,
                     separator: String::new(),
                     second_line_text: current_line.clone(),
@@ -458,7 +458,7 @@ impl Document {
     }
 
     pub fn delete_char_forward(&mut self) {
-        use crate::text_buffer::Position;
+        use super::text_buffer::Position;
         let pos = Position::new(self.cursor_line, self.cursor_column);
         
         let line_length = self.get_line_length(self.cursor_line);
@@ -466,7 +466,7 @@ impl Document {
             // Delete character at cursor
             if let Some(deleted_char) = self.text_buffer.char_at(pos) {
                 self.undo_manager
-                    .add_action(crate::undo::UndoAction::DeleteText {
+                    .add_action(super::undo::UndoAction::DeleteText {
                         line: self.cursor_line,
                         column: self.cursor_column,
                         text: deleted_char.to_string(),
@@ -481,7 +481,7 @@ impl Document {
 
             // Record undo action for joining lines
             self.undo_manager
-                .add_action(crate::undo::UndoAction::JoinLines {
+                .add_action(super::undo::UndoAction::JoinLines {
                     line: self.cursor_line,
                     separator: String::new(),
                     second_line_text: next_line.clone(),
@@ -513,7 +513,7 @@ impl Document {
         let line_length = self.get_line_length(self.cursor_line);
         if self.cursor_column < line_length {
             // Delete from cursor to end of line
-            use crate::text_buffer::{Position, Range};
+            use super::text_buffer::{Position, Range};
             let start_pos = Position::new(self.cursor_line, self.cursor_column);
             let end_pos = Position::new(self.cursor_line, line_length);
             let range = Range::new(start_pos, end_pos);
@@ -536,7 +536,7 @@ impl Document {
         self.move_word_forward();
 
         // Delete from original position to current position using piece table
-        use crate::text_buffer::{Position, Range};
+        use super::text_buffer::{Position, Range};
         let start_pos = Position::new(original_line, original_column);
         let end_pos = Position::new(self.cursor_line, self.cursor_column);
         let range = Range::new(start_pos, end_pos);
@@ -557,7 +557,7 @@ impl Document {
         self.move_big_word_forward();
 
         // Delete from original position to current position using piece table
-        use crate::text_buffer::{Position, Range};
+        use super::text_buffer::{Position, Range};
         let start_pos = Position::new(original_line, original_column);
         let end_pos = Position::new(self.cursor_line, self.cursor_column);
         let range = Range::new(start_pos, end_pos);
@@ -573,12 +573,12 @@ impl Document {
     pub fn delete_char_backward(&mut self) {
         if self.cursor_column > 0 {
             // Delete character before cursor using piece table
-            use crate::text_buffer::Position;
+            use super::text_buffer::Position;
             let pos = Position::new(self.cursor_line, self.cursor_column - 1);
             let deleted_char = self.text_buffer.char_at(pos).unwrap_or(' ');
             
             self.undo_manager
-                .add_action(crate::undo::UndoAction::DeleteText {
+                .add_action(super::undo::UndoAction::DeleteText {
                     line: self.cursor_line,
                     column: self.cursor_column - 1,
                     text: deleted_char.to_string(),
@@ -594,7 +594,7 @@ impl Document {
 
             // Record undo action for joining lines
             self.undo_manager
-                .add_action(crate::undo::UndoAction::JoinLines {
+                .add_action(super::undo::UndoAction::JoinLines {
                     line: self.cursor_line - 1,
                     separator: String::new(),
                     second_line_text: current_line.clone(),
@@ -603,7 +603,7 @@ impl Document {
             self.cursor_line -= 1;
             self.cursor_column = previous_line_len;
             // Append the current line content to the previous line using piece table
-            use crate::text_buffer::Position;
+            use super::text_buffer::Position;
             let pos = Position::new(self.cursor_line, previous_line_len);
             self.text_buffer.insert(pos, &current_line);
             self.modified = true;
@@ -618,7 +618,7 @@ impl Document {
         self.move_word_backward();
 
         // Delete from current position to original position using piece table
-        use crate::text_buffer::{Position, Range};
+        use super::text_buffer::{Position, Range};
         let start_pos = Position::new(self.cursor_line, self.cursor_column);
         let end_pos = Position::new(original_line, original_column);
         let range = Range::new(start_pos, end_pos);
@@ -634,7 +634,7 @@ impl Document {
         self.move_big_word_backward();
 
         // Delete from current position to original position using piece table
-        use crate::text_buffer::{Position, Range};
+        use super::text_buffer::{Position, Range};
         let start_pos = Position::new(self.cursor_line, self.cursor_column);
         let end_pos = Position::new(original_line, original_column);
         let range = Range::new(start_pos, end_pos);
@@ -690,7 +690,7 @@ impl Document {
         let first_non_ws = line.chars().position(|c| !c.is_whitespace()).unwrap_or(0);
 
         if self.cursor_column > first_non_ws {
-            use crate::text_buffer::{Position, Range};
+            use super::text_buffer::{Position, Range};
             let start_pos = Position::new(self.cursor_line, first_non_ws);
             let end_pos = Position::new(self.cursor_line, self.cursor_column);
             let range = Range::new(start_pos, end_pos);
@@ -705,7 +705,7 @@ impl Document {
             || self.cursor_column < self.get_line_length(self.cursor_line)
         {
             // Delete from cursor to end of file using piece table
-            use crate::text_buffer::{Position, Range};
+            use super::text_buffer::{Position, Range};
             let start_pos = Position::new(self.cursor_line, self.cursor_column);
             let last_line = self.line_count() - 1;
             let last_column = self.get_line_length(last_line);
@@ -719,7 +719,7 @@ impl Document {
     pub fn delete_to_start_of_file(&mut self) {
         if self.cursor_line > 0 || self.cursor_column > 0 {
             // Delete from start of file to cursor using piece table
-            use crate::text_buffer::{Position, Range};
+            use super::text_buffer::{Position, Range};
             let start_pos = Position::new(0, 0);
             let end_pos = Position::new(self.cursor_line, self.cursor_column);
             let range = Range::new(start_pos, end_pos);
@@ -747,7 +747,7 @@ impl Document {
         let line = self.get_line(self.cursor_line).unwrap_or_default();
         if let Some(pos) = line[self.cursor_column + 1..].find(target) {
             let end_pos = self.cursor_column + 1 + pos;
-            use crate::text_buffer::{Position, Range};
+            use super::text_buffer::{Position, Range};
             let start_pos = Position::new(self.cursor_line, self.cursor_column);
             let end_pos = Position::new(self.cursor_line, end_pos);
             let range = Range::new(start_pos, end_pos);
@@ -759,7 +759,7 @@ impl Document {
     pub fn delete_until_char_backward(&mut self, target: char) {
         let line = self.get_line(self.cursor_line).unwrap_or_default();
         if let Some(pos) = line[..self.cursor_column].rfind(target) {
-            use crate::text_buffer::{Position, Range};
+            use super::text_buffer::{Position, Range};
             let start_pos = Position::new(self.cursor_line, pos + 1);
             let end_pos = Position::new(self.cursor_line, self.cursor_column);
             let range = Range::new(start_pos, end_pos);
@@ -773,7 +773,7 @@ impl Document {
         let line = self.get_line(self.cursor_line).unwrap_or_default();
         if let Some(pos) = line[self.cursor_column + 1..].find(target) {
             let end_pos = self.cursor_column + 1 + pos + 1; // Include the target char
-            use crate::text_buffer::{Position, Range};
+            use super::text_buffer::{Position, Range};
             let start_pos = Position::new(self.cursor_line, self.cursor_column);
             let end_pos = Position::new(self.cursor_line, end_pos);
             let range = Range::new(start_pos, end_pos);
@@ -785,7 +785,7 @@ impl Document {
     pub fn delete_find_char_backward(&mut self, target: char) {
         let line = self.get_line(self.cursor_line).unwrap_or_default();
         if let Some(pos) = line[..self.cursor_column].rfind(target) {
-            use crate::text_buffer::{Position, Range};
+            use super::text_buffer::{Position, Range};
             let start_pos = Position::new(self.cursor_line, pos);
             let end_pos = Position::new(self.cursor_line, self.cursor_column);
             let range = Range::new(start_pos, end_pos);
@@ -1009,24 +1009,24 @@ impl Document {
             // Insert spaces
             let spaces = " ".repeat(tab_width);
             self.undo_manager
-                .add_action(crate::undo::UndoAction::InsertText {
+                .add_action(super::undo::UndoAction::InsertText {
                     line: self.cursor_line,
                     column: self.cursor_column,
                     text: spaces.clone(),
                 });
-            use crate::text_buffer::Position;
+            use super::text_buffer::Position;
             let pos = Position::new(self.cursor_line, self.cursor_column);
             self.text_buffer.insert(pos, &spaces);
             self.cursor_column += tab_width;
         } else {
             // Insert actual tab
             self.undo_manager
-                .add_action(crate::undo::UndoAction::InsertText {
+                .add_action(super::undo::UndoAction::InsertText {
                     line: self.cursor_line,
                     column: self.cursor_column,
                     text: "\t".to_string(),
                 });
-            use crate::text_buffer::Position;
+            use super::text_buffer::Position;
             let pos = Position::new(self.cursor_line, self.cursor_column);
             self.text_buffer.insert(pos, "\t");
             self.cursor_column += 1;
@@ -1041,7 +1041,7 @@ impl Document {
             "\t".to_string()
         };
 
-        use crate::text_buffer::Position;
+        use super::text_buffer::Position;
         let pos = Position::new(self.cursor_line, 0);
         self.text_buffer.insert(pos, &indent);
         
@@ -1065,7 +1065,7 @@ impl Document {
         };
 
         for line_idx in start_line..end_line {
-            use crate::text_buffer::Position;
+            use super::text_buffer::Position;
             let pos = Position::new(line_idx, 0);
             self.text_buffer.insert(pos, &indent);
         }
@@ -1094,7 +1094,7 @@ impl Document {
             }
             
             if chars_to_remove > 0 {
-                use crate::text_buffer::{Position, Range};
+                use super::text_buffer::{Position, Range};
                 let start_pos = Position::new(self.cursor_line, 0);
                 let end_pos = Position::new(self.cursor_line, chars_to_remove);
                 let range = Range::new(start_pos, end_pos);
@@ -1130,7 +1130,7 @@ impl Document {
                 }
                 
                 if chars_to_remove > 0 {
-                    use crate::text_buffer::{Position, Range};
+                    use super::text_buffer::{Position, Range};
                     let start_pos = Position::new(line_idx, 0);
                     let end_pos = Position::new(line_idx, chars_to_remove);
                     let range = Range::new(start_pos, end_pos);
@@ -1530,7 +1530,7 @@ impl Document {
 
         // Record undo information
         self.undo_manager
-            .add_action(crate::undo::UndoAction::JoinLines {
+            .add_action(super::undo::UndoAction::JoinLines {
                 line: current_line,
                 separator: if needs_space {
                     " ".to_string()
@@ -1584,20 +1584,20 @@ impl Document {
 
         // Record undo action
         self.undo_manager
-            .add_action(crate::undo::UndoAction::DeleteText {
+            .add_action(super::undo::UndoAction::DeleteText {
                 line: self.cursor_line,
                 column: self.cursor_column,
                 text: original_char.to_string(),
             });
         self.undo_manager
-            .add_action(crate::undo::UndoAction::InsertText {
+            .add_action(super::undo::UndoAction::InsertText {
                 line: self.cursor_line,
                 column: self.cursor_column,
                 text: new_char.clone(),
             });
 
         // Replace character using piece table
-        use crate::text_buffer::{Position, Range};
+        use super::text_buffer::{Position, Range};
         let char_start = Position::new(self.cursor_line, self.cursor_column);
         let char_end = Position::new(self.cursor_line, self.cursor_column + 1);
         let range = Range::new(char_start, char_end);
@@ -1625,13 +1625,13 @@ impl Document {
             if original_line != lowercase_line {
                 // Record undo action
                 self.undo_manager
-                    .add_action(crate::undo::UndoAction::DeleteText {
+                    .add_action(super::undo::UndoAction::DeleteText {
                         line: self.cursor_line,
                         column: 0,
                         text: original_line,
                     });
                 self.undo_manager
-                    .add_action(crate::undo::UndoAction::InsertText {
+                    .add_action(super::undo::UndoAction::InsertText {
                         line: self.cursor_line,
                         column: 0,
                         text: lowercase_line.clone(),
@@ -1657,13 +1657,13 @@ impl Document {
             if original_line != uppercase_line {
                 // Record undo action
                 self.undo_manager
-                    .add_action(crate::undo::UndoAction::DeleteText {
+                    .add_action(super::undo::UndoAction::DeleteText {
                         line: self.cursor_line,
                         column: 0,
                         text: original_line,
                     });
                 self.undo_manager
-                    .add_action(crate::undo::UndoAction::InsertText {
+                    .add_action(super::undo::UndoAction::InsertText {
                         line: self.cursor_line,
                         column: 0,
                         text: uppercase_line.clone(),
@@ -1689,7 +1689,7 @@ impl Document {
             return String::new();
         }
 
-        use crate::text_buffer::{Position, Range};
+        use super::text_buffer::{Position, Range};
         let start_pos = Position::new(start_line, start_col);
         let end_pos = Position::new(end_line, end_col);
         let range = Range::new(start_pos, end_pos);

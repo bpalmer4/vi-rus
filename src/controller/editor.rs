@@ -1,13 +1,11 @@
-use crate::mode_controllers::{ModeController, ModeTransition, SharedEditorState};
-use crate::command::Mode;
-use crate::insert_controller::InsertController;
-use crate::normal_controller::NormalController;
-use crate::visual_controller::VisualController;
-use crate::command_controller::CommandController;
+use crate::controller::shared_state::{ModeController, ModeTransition, SharedEditorState};
+use crate::controller::command_types::Mode;
+use crate::controller::insert::InsertController;
+use crate::controller::normal::NormalController;
+use crate::controller::visual::VisualController;
+use crate::controller::command::CommandController;
 use crate::view::{BufferManager, View, RenderParams, DocumentViewModel, BracketHighlight};
-use crate::marks::MarkManager;
-use crate::registers::RegisterManager;
-use crate::search::SearchState;
+use crate::document_model::{MarkManager, RegisterManager, SearchState, SearchDirection};
 use crossterm::{
     event::{self, Event, KeyCode, KeyEvent},
     execute,
@@ -241,16 +239,18 @@ impl EditorController {
                 let pattern = self.command_buffer.clone();
                 // Set the search pattern and direction
                 let direction = if self.current_mode == Mode::Search {
-                    crate::search::SearchDirection::Forward
+                    SearchDirection::Forward
                 } else {
-                    crate::search::SearchDirection::Backward
+                    SearchDirection::Backward
                 };
                 
-                let _ = self.shared_state.search_state.set_pattern(pattern, direction);
-                
-                // Search the document
                 let doc = self.shared_state.buffer_manager.current_document();
-                if let Ok(_) = self.shared_state.search_state.search_document(doc) {
+                if let Ok(_) = crate::controller::search_commands::SearchCommands::start_search(
+                    &mut self.shared_state.search_state,
+                    doc,
+                    pattern,
+                    direction
+                ) {
                     // Find first match and move cursor there
                     if let Some(search_match) = self.shared_state.search_state.find_next_match(0, 0) {
                         let doc = self.shared_state.buffer_manager.current_document_mut();
@@ -289,7 +289,7 @@ impl EditorController {
     }
     
     /// Apply RC configuration to this editor controller
-    pub fn apply_config(&mut self, config: &crate::rc::RcConfig) {
-        crate::rc::RcLoader::apply_config_to_shared_state(&mut self.shared_state, config);
+    pub fn apply_config(&mut self, config: &crate::config::RcConfig) {
+        crate::config::RcLoader::apply_config_to_shared_state(&mut self.shared_state, config);
     }
 }

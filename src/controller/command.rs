@@ -1,5 +1,5 @@
-use crate::mode_controllers::{ModeController, ModeTransition, SharedEditorState};
-use crate::command::Mode;
+use crate::controller::shared_state::{ModeController, ModeTransition, SharedEditorState};
+use crate::controller::command_types::Mode;
 use crossterm::event::{KeyEvent, KeyCode};
 
 pub struct CommandController {
@@ -49,6 +49,13 @@ impl ModeController for CommandController {
             _ => ModeTransition::Stay,
         }
     }
+}
+
+#[derive(Debug)]
+enum RangeType {
+    CurrentLine,
+    Global,
+    LineRange(usize, usize),
 }
 
 impl CommandController {
@@ -240,17 +247,17 @@ impl CommandController {
                 Some(false)
             }
             "set ff=unix" => {
-                shared.buffer_manager.current_document_mut().set_line_ending(crate::document::LineEnding::Unix);
+                shared.buffer_manager.current_document_mut().set_line_ending(crate::document_model::LineEnding::Unix);
                 shared.status_message = "Line endings set to Unix (LF)".to_string();
                 Some(false)
             }
             "set ff=dos" => {
-                shared.buffer_manager.current_document_mut().set_line_ending(crate::document::LineEnding::Windows);
+                shared.buffer_manager.current_document_mut().set_line_ending(crate::document_model::LineEnding::Windows);
                 shared.status_message = "Line endings set to DOS (CRLF)".to_string();
                 Some(false)
             }
             "set ff=mac" => {
-                shared.buffer_manager.current_document_mut().set_line_ending(crate::document::LineEnding::Mac);
+                shared.buffer_manager.current_document_mut().set_line_ending(crate::document_model::LineEnding::Mac);
                 shared.status_message = "Line endings set to Mac (CR)".to_string();
                 Some(false)
             }
@@ -280,7 +287,7 @@ impl CommandController {
                 Some(false)
             }
             "mkvirus" => {
-                let sample_rc = crate::rc::RcLoader::generate_sample_rc();
+                let sample_rc = crate::config::RcLoader::generate_sample_rc();
                 match std::fs::write(".virusrc", sample_rc) {
                     Ok(_) => {
                         shared.status_message = "Sample .virusrc created in current directory".to_string();
@@ -473,10 +480,10 @@ impl CommandController {
     }
 
     fn execute_search_replace_command(&mut self, trimmed: &str, shared: &mut SharedEditorState) -> Option<bool> {
-        // Handle substitute commands: s/pattern/replacement/flags or %s/pattern/replacement/flags
-        if trimmed.starts_with("s/") || trimmed.starts_with("%s/") {
-            let is_global_range = trimmed.starts_with("%s/");
-            let command_part = if is_global_range { &trimmed[3..] } else { &trimmed[2..] };
+        // Handle substitute commands: s/pattern/replacement/flags, %s/pattern/replacement/flags, or range-based like 5,10s/pattern/replacement/flags
+        if trimmed.starts_with("s/") || trimmed.starts_with("%s/") || self.is_range_substitute_command(trimmed) {
+            // Parse range if present
+            let (range_type, command_part) = self.parse_substitute_range(trimmed);
             
             // Parse s/pattern/replacement/flags format
             let parts: Vec<&str> = command_part.split('/').collect();
@@ -487,38 +494,49 @@ impl CommandController {
                 
                 // Parse flags
                 let global_flag = flags.contains('g');
-                let case_insensitive = flags.contains('i');
+                let _case_insensitive = flags.contains('i'); // TODO: implement case sensitivity
                 
-                // Execute the substitution
-                let result = if is_global_range {
-                    // %s - substitute in entire document
-                    crate::search::SearchReplace::substitute_all_document(
-                        shared.buffer_manager.current_document_mut(),
-                        pattern,
-                        replacement,
-                        !case_insensitive,
-                    )
-                } else {
-                    // s - substitute in current line only
-                    let current_line = shared.buffer_manager.current_document().cursor_line;
-                    crate::search::SearchReplace::substitute_document(
-                        shared.buffer_manager.current_document_mut(),
-                        current_line,
-                        current_line,
-                        pattern,
-                        replacement,
-                        global_flag,
-                        !case_insensitive,
-                    )
+                // Execute the substitution based on range type
+                let result = match range_type {
+                    RangeType::Global => {
+                        // %s - substitute in entire document
+                        crate::controller::search_commands::SearchReplace::substitute_all_document(
+                            shared.buffer_manager.current_document_mut(),
+                            pattern,
+                            replacement,
+                        )
+                    }
+                    RangeType::CurrentLine => {
+                        // s - substitute in current line only
+                        let current_line = shared.buffer_manager.current_document().cursor_line;
+                        crate::controller::search_commands::SearchReplace::substitute_line(
+                            shared.buffer_manager.current_document_mut(),
+                            current_line,
+                            pattern,
+                            replacement,
+                            global_flag,
+                        ).map(|count| (count, if count > 0 { 1 } else { 0 }))
+                    }
+                    RangeType::LineRange(start, end) => {
+                        // 5,10s - substitute in specified line range
+                        crate::controller::search_commands::SearchReplace::substitute_range(
+                            shared.buffer_manager.current_document_mut(),
+                            start,
+                            end,
+                            pattern,
+                            replacement,
+                            global_flag,
+                        )
+                    }
                 };
                 
                 match result {
-                    Ok(count) => {
-                        if count > 0 {
-                            if count == 1 {
+                    Ok((substitutions, _lines_affected)) => {
+                        if substitutions > 0 {
+                            if substitutions == 1 {
                                 shared.status_message = "1 substitution made".to_string();
                             } else {
-                                shared.status_message = format!("{} substitutions made", count);
+                                shared.status_message = format!("{} substitutions made", substitutions);
                             }
                         } else {
                             shared.status_message = "Pattern not found".to_string();
@@ -627,6 +645,65 @@ impl CommandController {
             Some(false)
         } else {
             None
+        }
+    }
+
+    /// Check if command is a range-based substitute command (e.g., "5,10s/old/new/")
+    fn is_range_substitute_command(&self, trimmed: &str) -> bool {
+        // Look for pattern like "5,10s/" or "1,$s/" 
+        if let Some(s_pos) = trimmed.find("s/") {
+            let before_s = &trimmed[..s_pos];
+            // Check if there's a range before the 's/'
+            before_s.contains(',') && !before_s.is_empty()
+        } else {
+            false
+        }
+    }
+
+    /// Parse substitute command range and return (range_type, command_part)
+    fn parse_substitute_range<'a>(&self, trimmed: &'a str) -> (RangeType, &'a str) {
+        if trimmed.starts_with("%s/") {
+            // %s/pattern/replacement/ - global range
+            (RangeType::Global, &trimmed[3..])
+        } else if trimmed.starts_with("s/") {
+            // s/pattern/replacement/ - current line
+            (RangeType::CurrentLine, &trimmed[2..])
+        } else if let Some(s_pos) = trimmed.find("s/") {
+            // Range like "5,10s/pattern/replacement/"
+            let range_part = &trimmed[..s_pos];
+            let command_part = &trimmed[s_pos + 2..];
+            
+            if let Some((start_str, end_str)) = range_part.split_once(',') {
+                let start_str = start_str.trim();
+                let end_str = end_str.trim();
+                
+                // Handle special cases like "$" for end of file
+                let start = if start_str == "1" || start_str.is_empty() {
+                    0  // Convert to 0-based indexing
+                } else {
+                    start_str.parse::<usize>().unwrap_or(1).saturating_sub(1)
+                };
+                
+                let end = if end_str == "$" {
+                    usize::MAX  // Will be clamped to document length
+                } else {
+                    end_str.parse::<usize>().unwrap_or(1).saturating_sub(1)
+                };
+                
+                (RangeType::LineRange(start, end), command_part)
+            } else {
+                // Single number like "5s/pattern/replacement/" - treat as single line range
+                if let Ok(line_num) = range_part.trim().parse::<usize>() {
+                    let line_index = line_num.saturating_sub(1);
+                    (RangeType::LineRange(line_index, line_index), command_part)
+                } else {
+                    // Fallback to current line
+                    (RangeType::CurrentLine, command_part)
+                }
+            }
+        } else {
+            // Fallback to current line
+            (RangeType::CurrentLine, &trimmed[2..])
         }
     }
 }

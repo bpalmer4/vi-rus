@@ -1,4 +1,4 @@
-use crate::document::Document;
+use crate::document_model::Document;
 
 pub fn create_help_document() -> Document {
     let help_lines = vec![
@@ -293,7 +293,7 @@ pub fn create_help_document() -> Document {
     ];
 
     // Create a document with the help content using TextBuffer's from_string method
-    use crate::text_buffer::TextBuffer;
+    use crate::document_model::TextBuffer;
     use std::collections::HashMap;
     
     let help_content = help_lines.join("\n");
@@ -304,10 +304,10 @@ pub fn create_help_document() -> Document {
         cursor_column: 0,
         filename: None,
         modified: false,
-        line_ending: crate::document::LineEnding::Unix,
+        line_ending: crate::document_model::LineEnding::Unix,
         expand_tab: true,
         local_marks: HashMap::new(),
-        undo_manager: crate::undo::UndoManager::new(),
+        undo_manager: crate::document_model::UndoManager::new(),
     };
     help_doc
 }
@@ -318,7 +318,7 @@ mod tests {
 
     #[test]
     fn test_simple_multiline_document() {
-        use crate::text_buffer::TextBuffer;
+        use crate::document_model::TextBuffer;
         use std::collections::HashMap;
         
         let simple_content = "Line 1\nLine 2\nLine 3".to_string();
@@ -328,10 +328,10 @@ mod tests {
             cursor_column: 0,
             filename: None,
             modified: false,
-            line_ending: crate::document::LineEnding::Unix,
+            line_ending: crate::document_model::LineEnding::Unix,
             expand_tab: true,
             local_marks: HashMap::new(),
-            undo_manager: crate::undo::UndoManager::new(),
+            undo_manager: crate::document_model::UndoManager::new(),
         };
         
         assert_eq!(simple_doc.line_count(), 3);
@@ -342,7 +342,7 @@ mod tests {
     
     #[test] 
     fn test_unicode_content() {
-        use crate::text_buffer::TextBuffer;
+        use crate::document_model::TextBuffer;
         use std::collections::HashMap;
         
         let unicode_content = "  h, ← - Move left\n  j, ↓ - Move down\n  k, ↑ - Move up".to_string();
@@ -352,10 +352,10 @@ mod tests {
             cursor_column: 0,
             filename: None,
             modified: false,
-            line_ending: crate::document::LineEnding::Unix,
+            line_ending: crate::document_model::LineEnding::Unix,
             expand_tab: true,
             local_marks: HashMap::new(),
-            undo_manager: crate::undo::UndoManager::new(),
+            undo_manager: crate::document_model::UndoManager::new(),
         };
         
         println!("Unicode test - {} lines:", unicode_doc.line_count());
@@ -373,7 +373,7 @@ mod tests {
     
     #[test] 
     fn test_various_unicode_characters() {
-        use crate::text_buffer::TextBuffer;
+        use crate::document_model::TextBuffer;
         use std::collections::HashMap;
         
         let content = "😀 emoji\n🔥 fire\n✅ checkmark\nкириллица\n中文字符\n→←↑↓ arrows".to_string();
@@ -383,10 +383,10 @@ mod tests {
             cursor_column: 0,
             filename: None,
             modified: false,
-            line_ending: crate::document::LineEnding::Unix,
+            line_ending: crate::document_model::LineEnding::Unix,
             expand_tab: true,
             local_marks: HashMap::new(),
-            undo_manager: crate::undo::UndoManager::new(),
+            undo_manager: crate::document_model::UndoManager::new(),
         };
         
         println!("Various Unicode test - {} lines:", doc.line_count());

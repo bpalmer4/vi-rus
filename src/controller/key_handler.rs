@@ -1,4 +1,5 @@
-use crate::command::{Command, Mode};
+use crate::controller::command_types::{Command, Mode};
+use crate::controller::yank_paste::{YankType, PasteType};
 use crossterm::event::{KeyCode, KeyModifiers};
 
 pub struct KeyHandler;
@@ -131,11 +132,11 @@ impl KeyHandler {
 
             // Paste commands
             KeyCode::Char('p') => Some(Command::Paste(
-                crate::yank_paste_handler::PasteType::After,
+                PasteType::After,
                 None,
             )),
             KeyCode::Char('P') => Some(Command::Paste(
-                crate::yank_paste_handler::PasteType::Before,
+                PasteType::Before,
                 None,
             )),
 
@@ -264,10 +265,10 @@ impl KeyHandler {
                     ('y', 'y') => {
                         let register = pending_register.take();
                         Some(if count == 1 {
-                            Command::Yank(crate::yank_paste_handler::YankType::Line, register)
+                            Command::Yank(YankType::Line, register)
                         } else {
                             Command::Yank(
-                                crate::yank_paste_handler::YankType::Lines(count),
+                                YankType::Lines(count),
                                 register,
                             )
                         })
@@ -275,77 +276,77 @@ impl KeyHandler {
                     ('y', 'w') => {
                         let register = pending_register.take();
                         Some(Command::Yank(
-                            crate::yank_paste_handler::YankType::Word,
+                            YankType::Word,
                             register,
                         ))
                     }
                     ('y', 'W') => {
                         let register = pending_register.take();
                         Some(Command::Yank(
-                            crate::yank_paste_handler::YankType::BigWord,
+                            YankType::BigWord,
                             register,
                         ))
                     }
                     ('y', 'b') => {
                         let register = pending_register.take();
                         Some(Command::Yank(
-                            crate::yank_paste_handler::YankType::WordBackward,
+                            YankType::WordBackward,
                             register,
                         ))
                     }
                     ('y', 'B') => {
                         let register = pending_register.take();
                         Some(Command::Yank(
-                            crate::yank_paste_handler::YankType::BigWordBackward,
+                            YankType::BigWordBackward,
                             register,
                         ))
                     }
                     ('y', 'e') => {
                         let register = pending_register.take();
                         Some(Command::Yank(
-                            crate::yank_paste_handler::YankType::ToEndOfWord,
+                            YankType::ToEndOfWord,
                             register,
                         ))
                     }
                     ('y', 'E') => {
                         let register = pending_register.take();
                         Some(Command::Yank(
-                            crate::yank_paste_handler::YankType::ToEndOfBigWord,
+                            YankType::ToEndOfBigWord,
                             register,
                         ))
                     }
                     ('y', '0') => {
                         let register = pending_register.take();
                         Some(Command::Yank(
-                            crate::yank_paste_handler::YankType::ToStartOfLine,
+                            YankType::ToStartOfLine,
                             register,
                         ))
                     }
                     ('y', '$') => {
                         let register = pending_register.take();
                         Some(Command::Yank(
-                            crate::yank_paste_handler::YankType::ToEndOfLine,
+                            YankType::ToEndOfLine,
                             register,
                         ))
                     }
                     ('y', '^') => {
                         let register = pending_register.take();
                         Some(Command::Yank(
-                            crate::yank_paste_handler::YankType::ToFirstNonWhitespace,
+                            YankType::ToFirstNonWhitespace,
                             register,
                         ))
                     }
                     ('y', 'G') => {
                         let register = pending_register.take();
                         Some(Command::Yank(
-                            crate::yank_paste_handler::YankType::ToEndOfFile,
+                            YankType::ToEndOfFile,
                             register,
                         ))
                     }
                     ('y', 'g') => {
                         let register = pending_register.take();
                         Some(Command::Yank(
-                            crate::yank_paste_handler::YankType::ToStartOfFile,
+                            YankType::ToStartOfFile,
                             register,
                         ))
                     } // ygg -> yank to start
@@ -372,28 +373,28 @@ impl KeyHandler {
                     ('&', target_char) => {
                         let register = pending_register.take();
                         Some(Command::Yank(
-                            crate::yank_paste_handler::YankType::UntilChar(target_char),
+                            YankType::UntilChar(target_char),
                             register,
                         ))
                     }
                     ('*', target_char) => {
                         let register = pending_register.take();
                         Some(Command::Yank(
-                            crate::yank_paste_handler::YankType::UntilCharBackward(target_char),
+                            YankType::UntilCharBackward(target_char),
                             register,
                         ))
                     }
                     ('(', target_char) => {
                         let register = pending_register.take();
                         Some(Command::Yank(
-                            crate::yank_paste_handler::YankType::FindChar(target_char),
+                            YankType::FindChar(target_char),
                             register,
                         ))
                     }
                     (')', target_char) => {
                         let register = pending_register.take();
                         Some(Command::Yank(
-                            crate::yank_paste_handler::YankType::FindCharBackward(target_char),
+                            YankType::FindCharBackward(target_char),
                             register,
                         ))
                     }
@@ -547,11 +548,11 @@ impl KeyHandler {
                 // Handle register-aware commands
                 match (key, register_char) {
                     (KeyCode::Char('p'), Some(reg)) => Some(Command::Paste(
-                        crate::yank_paste_handler::PasteType::After,
+                        PasteType::After,
                         Some(reg),
                     )),
                     (KeyCode::Char('P'), Some(reg)) => Some(Command::Paste(
-                        crate::yank_paste_handler::PasteType::Before,
+                        PasteType::Before,
                         Some(reg),
                     )),
                     (KeyCode::Char('y'), Some(_reg)) => {

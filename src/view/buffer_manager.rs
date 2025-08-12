@@ -1,4 +1,4 @@
-use crate::document::Document;
+use crate::document_model::Document;
 
 pub struct BufferManager {
     pub buffers: Vec<Document>,
@@ -167,7 +167,7 @@ impl BufferManager {
         }
     }
 
-    pub fn close_buffer(&mut self, mark_manager: &mut crate::marks::MarkManager) -> Result<String, String> {
+    pub fn close_buffer(&mut self, mark_manager: &mut crate::document_model::MarkManager) -> Result<String, String> {
         if self.buffers.len() == 1 {
             return Err("Cannot close last buffer".to_string());
         }
@@ -192,7 +192,7 @@ impl BufferManager {
         Ok(format!("Buffer closed. Current: \"{filename}\""))
     }
 
-    pub fn force_close_buffer(&mut self, mark_manager: &mut crate::marks::MarkManager) -> Result<String, String> {
+    pub fn force_close_buffer(&mut self, mark_manager: &mut crate::document_model::MarkManager) -> Result<String, String> {
         if self.buffers.len() == 1 {
             return Err("Cannot close last buffer".to_string());
         }
@@ -224,7 +224,7 @@ impl BufferManager {
     }
 
     pub fn add_help_buffer(&mut self) {
-        let help_doc = crate::help::create_help_document();
+        let help_doc = crate::controller::help::create_help_document();
         self.buffers.push(help_doc);
         self.current_buffer = self.buffers.len() - 1;
     }
@@ -270,16 +270,16 @@ impl BufferManager {
         }
     }
 
-    pub fn yank_text(&mut self, yank_type: crate::yank_paste_handler::YankType, register: Option<char>, register_manager: &mut crate::registers::RegisterManager, status_message: &mut String) {
-        crate::yank_paste_handler::YankPasteHandler::execute_yank_simple(self.current_document(), yank_type, register, register_manager, status_message);
+    pub fn yank_text(&mut self, yank_type: crate::controller::yank_paste::YankType, register: Option<char>, register_manager: &mut crate::document_model::RegisterManager, status_message: &mut String) {
+        crate::controller::yank_paste::YankPasteHandler::execute_yank_simple(self.current_document(), yank_type, register, register_manager, status_message);
     }
 
-    pub fn paste_text(&mut self, paste_type: crate::yank_paste_handler::PasteType, register: Option<char>, register_manager: &mut crate::registers::RegisterManager, status_message: &mut String) {
-        crate::yank_paste_handler::YankPasteHandler::execute_paste_simple(self.current_document_mut(), paste_type, register, register_manager, status_message);
+    pub fn paste_text(&mut self, paste_type: crate::controller::yank_paste::PasteType, register: Option<char>, register_manager: &mut crate::document_model::RegisterManager, status_message: &mut String) {
+        crate::controller::yank_paste::YankPasteHandler::execute_paste_simple(self.current_document_mut(), paste_type, register, register_manager, status_message);
     }
 
-    pub fn execute_indent_command(&mut self, command: crate::command::Command, status_message: &mut String) {
-        use crate::command::Command;
+    pub fn execute_indent_command(&mut self, command: crate::controller::command_types::Command, status_message: &mut String) {
+        use crate::controller::command_types::Command;
         let tab_width = 4; // Could be configurable
         let use_spaces = true; // Could be configurable
         

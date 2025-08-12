@@ -162,7 +162,7 @@ impl RcLoader {
     }
 
     /// Apply the configuration to the new modular architecture
-    pub fn apply_config_to_shared_state(shared_state: &mut crate::mode_controllers::SharedEditorState, config: &RcConfig) {
+    pub fn apply_config_to_shared_state(shared_state: &mut crate::controller::SharedEditorState, config: &RcConfig) {
         // Apply view settings
         shared_state.view.set_tab_stop(config.tab_stop);
         shared_state.view.set_line_numbers(config.show_line_numbers);
@@ -177,13 +177,13 @@ impl RcLoader {
         match config.line_ending.as_str() {
             "unix" => shared_state.buffer_manager
                 .current_document_mut()
-                .set_line_ending(crate::document::LineEnding::Unix),
+                .set_line_ending(crate::document_model::LineEnding::Unix),
             "dos" => shared_state.buffer_manager
                 .current_document_mut()
-                .set_line_ending(crate::document::LineEnding::Windows),
+                .set_line_ending(crate::document_model::LineEnding::Windows),
             "mac" => shared_state.buffer_manager
                 .current_document_mut()
-                .set_line_ending(crate::document::LineEnding::Mac),
+                .set_line_ending(crate::document_model::LineEnding::Mac),
             _ => {} // Default to Unix
         }
     }

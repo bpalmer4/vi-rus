@@ -32,7 +32,7 @@ pub enum UndoAction {
 
 impl UndoAction {
     /// Apply this undo action to a document
-    pub fn apply_to_document(&self, document: &mut crate::document::Document) {
+    pub fn apply_to_document(&self, document: &mut super::document::Document) {
         match self {
             UndoAction::InsertText { line, column, text } => {
                 // Make sure the line exists
@@ -145,7 +145,7 @@ impl UndoGroup {
     }
 
     /// Apply this undo group to a document (for redo operations)
-    pub fn apply_to_document(&self, document: &mut crate::document::Document) {
+    pub fn apply_to_document(&self, document: &mut super::document::Document) {
         // Apply actions in forward order for redo
         for action in &self.actions {
             action.apply_to_document(document);
@@ -156,7 +156,7 @@ impl UndoGroup {
     }
 
     /// Apply the reverse of this undo group to a document (for undo operations)  
-    pub fn apply_reverse_to_document(&self, document: &mut crate::document::Document) {
+    pub fn apply_reverse_to_document(&self, document: &mut super::document::Document) {
         // Apply reverse actions in reverse order for undo
         for action in self.actions.iter().rev() {
             let reverse_action = action.reverse();

@@ -237,7 +237,7 @@ mod tests {
 
     #[test]
     fn test_local_marks() {
-        use crate::document::Document;
+        use crate::document_model::Document;
         let mut doc = Document::new();
 
         // Set a local mark
@@ -270,7 +270,7 @@ mod tests {
 
     #[test]
     fn test_invalid_marks() {
-        use crate::document::Document;
+        use crate::document_model::Document;
         let mut doc = Document::new();
         let mut manager = MarkManager::new();
 
@@ -341,7 +341,7 @@ mod tests {
 
     #[test]
     fn test_clear_marks() {
-        use crate::document::Document;
+        use crate::document_model::Document;
         let mut doc = Document::new();
         let mut manager = MarkManager::new();
 

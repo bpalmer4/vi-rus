@@ -1,7 +1,7 @@
-use crate::mode_controllers::{ModeController, ModeTransition, SharedEditorState};
-use crate::command::{Mode, Command};
-use crate::key_handler::KeyHandler;
-use crate::visual_mode::{Selection, VisualMode, VisualModeHandler};
+use crate::controller::shared_state::{ModeController, ModeTransition, SharedEditorState};
+use crate::controller::command_types::{Mode, Command};
+use crate::controller::key_handler::KeyHandler;
+use crate::controller::visual_mode::{Selection, VisualMode, VisualModeHandler};
 use crossterm::event::{KeyEvent};
 
 pub struct VisualController {
@@ -64,9 +64,9 @@ impl ModeController for VisualController {
                     if let Some(selection) = &self.visual_selection {
                         let selected_text = VisualModeHandler::get_selected_text(selection, shared.buffer_manager.current_document());
                         let register_type = match selection.mode {
-                            VisualMode::Line => crate::registers::RegisterType::Line,
-                            VisualMode::Char => crate::registers::RegisterType::Character,
-                            VisualMode::Block => crate::registers::RegisterType::Block,
+                            VisualMode::Line => crate::document_model::RegisterType::Line,
+                            VisualMode::Char => crate::document_model::RegisterType::Character,
+                            VisualMode::Block => crate::document_model::RegisterType::Block,
                         };
                         shared.register_manager.store_in_register(None, selected_text, register_type);
                     }

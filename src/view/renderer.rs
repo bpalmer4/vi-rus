@@ -1,6 +1,6 @@
-use crate::command::Mode;
-use crate::search::SearchState;
-use crate::visual_mode::Selection;
+use crate::controller::Mode;
+use crate::document_model::SearchState;
+use crate::controller::Selection;
 use super::view_model::{ViewModel, BracketHighlight};
 use crossterm::{
     cursor, execute,

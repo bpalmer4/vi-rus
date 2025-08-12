@@ -1,29 +1,12 @@
-mod command;
-mod document;
-mod help;
-mod key_handler;
-mod marks;
-mod movement;
-mod piece_table;
-mod rc;
-mod registers;
-mod search;
-mod text_buffer;
-mod undo;
 mod view;
-mod visual_mode;
-mod yank_paste_handler;
 
-// New modular architecture
-mod mode_controllers;
-mod insert_controller;
-mod normal_controller;
-mod visual_controller;
-mod command_controller;
-mod editor_controller;
+// Subsystems
+mod controller;
+mod config;
+mod document_model;
 
-use editor_controller::EditorController;
-use rc::RcLoader;
+use controller::EditorController;
+use config::RcLoader;
 use std::env;
 use std::path::PathBuf;
 

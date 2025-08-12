@@ -1,7 +1,5 @@
 use crate::view::BufferManager;
-use crate::marks::MarkManager;
-use crate::registers::RegisterManager;
-use crate::search::SearchState;
+use crate::document_model::{MarkManager, RegisterManager, SearchState};
 use crate::view::View;
 use crossterm::event::KeyEvent;
 
@@ -21,7 +19,7 @@ pub struct SharedEditorState {
 #[derive(Debug, PartialEq)]
 pub enum ModeTransition {
     Stay,
-    ToMode(crate::command::Mode),
+    ToMode(crate::controller::command_types::Mode),
     Quit,
 }
 

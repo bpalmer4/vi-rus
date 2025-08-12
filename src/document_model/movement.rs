@@ -1,4 +1,4 @@
-use crate::document::Document;
+use super::document::Document;
 
 impl Document {
     // Word movement methods - moved from document.rs to keep it focused on data
