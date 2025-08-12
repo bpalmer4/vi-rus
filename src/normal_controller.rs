@@ -3,6 +3,22 @@ use crate::command::{Mode, Command};
 use crate::key_handler::KeyHandler;
 use crossterm::event::{KeyEvent};
 
+// Helper macros to reduce boilerplate
+macro_rules! repeat_command {
+    ($doc:expr, $method:ident, $count:expr) => {
+        for _ in 0..$count { 
+            $doc.$method(); 
+        }
+    }
+}
+
+macro_rules! doc_mut {
+    ($shared:expr) => { 
+        $shared.buffer_manager.current_document_mut() 
+    }
+}
+
+
 pub struct NormalController {
     // Normal mode specific state
     pub last_find_char: Option<char>,
@@ -442,122 +458,47 @@ impl NormalController {
     }
 
     fn execute_movement_command(&mut self, command: Command, count: usize, shared: &mut SharedEditorState) {
+        let doc = doc_mut!(shared);
         match command {
             // Basic movement
-            Command::MoveUp => {
-                for _ in 0..count {
-                    shared.buffer_manager.current_document_mut().move_cursor_up();
-                }
-            }
-            Command::MoveDown => {
-                for _ in 0..count {
-                    shared.buffer_manager.current_document_mut().move_cursor_down();
-                }
-            }
-            Command::MoveLeft => {
-                for _ in 0..count {
-                    shared.buffer_manager.current_document_mut().move_cursor_left();
-                }
-            }
-            Command::MoveRight => {
-                for _ in 0..count {
-                    shared.buffer_manager.current_document_mut().move_cursor_right();
-                }
-            }
+            Command::MoveUp => repeat_command!(doc, move_cursor_up, count),
+            Command::MoveDown => repeat_command!(doc, move_cursor_down, count),
+            Command::MoveLeft => repeat_command!(doc, move_cursor_left, count),
+            Command::MoveRight => repeat_command!(doc, move_cursor_right, count),
 
             // Word movement
-            Command::MoveWordForward => {
-                for _ in 0..count {
-                    shared.buffer_manager.current_document_mut().move_word_forward();
-                }
-            }
-            Command::MoveWordBackward => {
-                for _ in 0..count {
-                    shared.buffer_manager.current_document_mut().move_word_backward();
-                }
-            }
-            Command::MoveWordEnd => {
-                for _ in 0..count {
-                    shared.buffer_manager.current_document_mut().move_word_end();
-                }
-            }
-            Command::MoveBigWordForward => {
-                for _ in 0..count {
-                    shared.buffer_manager.current_document_mut().move_big_word_forward();
-                }
-            }
-            Command::MoveBigWordBackward => {
-                for _ in 0..count {
-                    shared.buffer_manager.current_document_mut().move_big_word_backward();
-                }
-            }
-            Command::MoveBigWordEnd => {
-                for _ in 0..count {
-                    shared.buffer_manager.current_document_mut().move_big_word_end();
-                }
-            }
+            Command::MoveWordForward => repeat_command!(doc, move_word_forward, count),
+            Command::MoveWordBackward => repeat_command!(doc, move_word_backward, count),
+            Command::MoveWordEnd => repeat_command!(doc, move_word_end, count),
+            Command::MoveBigWordForward => repeat_command!(doc, move_big_word_forward, count),
+            Command::MoveBigWordBackward => repeat_command!(doc, move_big_word_backward, count),
+            Command::MoveBigWordEnd => repeat_command!(doc, move_big_word_end, count),
 
             // Line movement
-            Command::MoveLineStart => {
-                shared.buffer_manager.current_document_mut().move_line_start();
-            }
-            Command::MoveLineEnd => {
-                shared.buffer_manager.current_document_mut().move_line_end();
-            }
-            Command::MoveFirstNonWhitespace => {
-                shared.buffer_manager.current_document_mut().move_first_non_whitespace();
-            }
-            Command::MoveDownToFirstNonWhitespace => {
-                for _ in 0..count {
-                    shared.buffer_manager.current_document_mut().move_down_to_first_non_whitespace();
-                }
-            }
-            Command::MoveUpToFirstNonWhitespace => {
-                for _ in 0..count {
-                    shared.buffer_manager.current_document_mut().move_up_to_first_non_whitespace();
-                }
-            }
+            Command::MoveLineStart => doc.move_line_start(),
+            Command::MoveLineEnd => doc.move_line_end(),
+            Command::MoveFirstNonWhitespace => doc.move_first_non_whitespace(),
+            Command::MoveDownToFirstNonWhitespace => repeat_command!(doc, move_down_to_first_non_whitespace, count),
+            Command::MoveUpToFirstNonWhitespace => repeat_command!(doc, move_up_to_first_non_whitespace, count),
 
-            // Document movement
+            // Document movement (special handling for jump list)
             Command::MoveDocumentStart => {
-                // Add current position to jump list before jumping
-                let doc = shared.buffer_manager.current_document();
-                let filename = shared.buffer_manager.current_document().filename.clone();
-                shared.mark_manager.add_to_jump_list(doc.cursor_line, doc.cursor_column, filename);
+                let current_doc = shared.buffer_manager.current_document();
+                shared.mark_manager.add_to_jump_list(current_doc.cursor_line, current_doc.cursor_column, current_doc.filename.clone());
                 shared.buffer_manager.current_document_mut().move_document_start();
             }
             Command::MoveDocumentEnd => {
-                // Add current position to jump list before jumping
-                let doc = shared.buffer_manager.current_document();
-                let filename = shared.buffer_manager.current_document().filename.clone();
-                shared.mark_manager.add_to_jump_list(doc.cursor_line, doc.cursor_column, filename);
+                let current_doc = shared.buffer_manager.current_document();
+                shared.mark_manager.add_to_jump_list(current_doc.cursor_line, current_doc.cursor_column, current_doc.filename.clone());
                 shared.buffer_manager.current_document_mut().move_document_end();
             }
-            Command::MovePageUp => {
-                for _ in 0..count {
-                    shared.buffer_manager.current_document_mut().move_page_up();
-                }
-            }
-            Command::MovePageDown => {
-                for _ in 0..count {
-                    shared.buffer_manager.current_document_mut().move_page_down();
-                }
-            }
-            Command::MoveHalfPageUp => {
-                for _ in 0..count {
-                    shared.buffer_manager.current_document_mut().move_half_page_up();
-                }
-            }
-            Command::MoveHalfPageDown => {
-                for _ in 0..count {
-                    shared.buffer_manager.current_document_mut().move_half_page_down();
-                }
-            }
+            Command::MovePageUp => repeat_command!(doc, move_page_up, count),
+            Command::MovePageDown => repeat_command!(doc, move_page_down, count),
+            Command::MoveHalfPageUp => repeat_command!(doc, move_half_page_up, count),
+            Command::MoveHalfPageDown => repeat_command!(doc, move_half_page_down, count),
 
             // Line jumping
-            Command::MoveToLine(line) => {
-                shared.buffer_manager.current_document_mut().move_to_line(line);
-            }
+            Command::MoveToLine(line) => doc.move_to_line(line),
 
             // Character search
             Command::FindChar(c) => {
@@ -565,7 +506,7 @@ impl NormalController {
                 self.last_find_forward = true;
                 self.last_find_before = false;
                 for _ in 0..count {
-                    shared.buffer_manager.current_document_mut().find_char(c, true, false);
+                    doc.find_char(c, true, false);
                 }
             }
             Command::FindCharBackward(c) => {
@@ -573,7 +514,7 @@ impl NormalController {
                 self.last_find_forward = false;
                 self.last_find_before = false;
                 for _ in 0..count {
-                    shared.buffer_manager.current_document_mut().find_char(c, false, false);
+                    doc.find_char(c, false, false);
                 }
             }
             Command::FindCharBefore(c) => {
@@ -687,51 +628,21 @@ impl NormalController {
                     }
                 }
             }
-            Command::DeleteToEndOfLine => {
-                shared.buffer_manager.current_document_mut().delete_to_end_of_line();
-            }
-            Command::DeleteWord => {
-                shared.buffer_manager.current_document_mut().delete_word_forward();
-            }
-            Command::DeleteBigWord => {
-                shared.buffer_manager.current_document_mut().delete_big_word_forward();
-            }
-            Command::DeleteWordBackward => {
-                shared.buffer_manager.current_document_mut().delete_word_backward();
-            }
-            Command::DeleteBigWordBackward => {
-                shared.buffer_manager.current_document_mut().delete_big_word_backward();
-            }
-            Command::DeleteToEndOfWord => {
-                shared.buffer_manager.current_document_mut().delete_to_end_of_word();
-            }
-            Command::DeleteToEndOfBigWord => {
-                shared.buffer_manager.current_document_mut().delete_to_end_of_big_word();
-            }
-            Command::DeleteToStartOfLine => {
-                shared.buffer_manager.current_document_mut().delete_to_start_of_line();
-            }
-            Command::DeleteToFirstNonWhitespace => {
-                shared.buffer_manager.current_document_mut().delete_to_first_non_whitespace();
-            }
-            Command::DeleteToEndOfFile => {
-                shared.buffer_manager.current_document_mut().delete_to_end_of_file();
-            }
-            Command::DeleteToStartOfFile => {
-                shared.buffer_manager.current_document_mut().delete_to_start_of_file();
-            }
-            Command::DeleteUntilChar(target) => {
-                shared.buffer_manager.current_document_mut().delete_until_char(target);
-            }
-            Command::DeleteUntilCharBackward(target) => {
-                shared.buffer_manager.current_document_mut().delete_until_char_backward(target);
-            }
-            Command::DeleteFindChar(target) => {
-                shared.buffer_manager.current_document_mut().delete_find_char(target);
-            }
-            Command::DeleteFindCharBackward(target) => {
-                shared.buffer_manager.current_document_mut().delete_find_char_backward(target);
-            }
+            Command::DeleteToEndOfLine => doc_mut!(shared).delete_to_end_of_line(),
+            Command::DeleteWord => doc_mut!(shared).delete_word_forward(),
+            Command::DeleteBigWord => doc_mut!(shared).delete_big_word_forward(),
+            Command::DeleteWordBackward => doc_mut!(shared).delete_word_backward(),
+            Command::DeleteBigWordBackward => doc_mut!(shared).delete_big_word_backward(),
+            Command::DeleteToEndOfWord => doc_mut!(shared).delete_to_end_of_word(),
+            Command::DeleteToEndOfBigWord => doc_mut!(shared).delete_to_end_of_big_word(),
+            Command::DeleteToStartOfLine => doc_mut!(shared).delete_to_start_of_line(),
+            Command::DeleteToFirstNonWhitespace => doc_mut!(shared).delete_to_first_non_whitespace(),
+            Command::DeleteToEndOfFile => doc_mut!(shared).delete_to_end_of_file(),
+            Command::DeleteToStartOfFile => doc_mut!(shared).delete_to_start_of_file(),
+            Command::DeleteUntilChar(target) => doc_mut!(shared).delete_until_char(target),
+            Command::DeleteUntilCharBackward(target) => doc_mut!(shared).delete_until_char_backward(target),
+            Command::DeleteFindChar(target) => doc_mut!(shared).delete_find_char(target),
+            Command::DeleteFindCharBackward(target) => doc_mut!(shared).delete_find_char_backward(target),
 
             _ => {} // Should not reach here
         }
@@ -831,7 +742,7 @@ impl NormalController {
     }
 
     fn execute_join_lines_command(&mut self, shared: &mut SharedEditorState) {
-        let doc = shared.buffer_manager.current_document_mut();
+        let doc = doc_mut!(shared);
         if doc.join_lines() {
             shared.status_message = "Lines joined".to_string();
         } else {
@@ -840,7 +751,7 @@ impl NormalController {
     }
 
     fn execute_case_command(&mut self, command: Command, shared: &mut SharedEditorState) {
-        let doc = shared.buffer_manager.current_document_mut();
+        let doc = doc_mut!(shared);
         match command {
             Command::ToggleCase => {
                 if doc.toggle_case_char() {
