@@ -1,4 +1,3 @@
-mod buffer_manager;
 mod command;
 mod document;
 mod help;

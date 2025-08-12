@@ -1,4 +1,4 @@
-use crate::buffer_manager::BufferManager;
+use crate::view::BufferManager;
 use crate::marks::MarkManager;
 use crate::registers::RegisterManager;
 use crate::search::SearchState;

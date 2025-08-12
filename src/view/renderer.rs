@@ -1,7 +1,7 @@
 use crate::command::Mode;
-use crate::document::Document;
 use crate::search::SearchState;
 use crate::visual_mode::Selection;
+use super::view_model::{ViewModel, BracketHighlight};
 use crossterm::{
     cursor, execute,
     style::{Color, ResetColor, SetBackgroundColor, SetForegroundColor},
@@ -17,9 +17,7 @@ pub struct RenderParams<'a> {
     pub buffer_info: Option<&'a str>,
     pub visual_selection: Option<&'a Selection>,
     pub search_state: Option<&'a SearchState>,
-    pub matching_bracket: Option<(usize, usize)>, // (line, column) of matching bracket
-    pub unmatched_bracket: Option<(usize, usize)>, // (line, column) of unmatched bracket at cursor
-    pub all_unmatched_brackets: Option<&'a Vec<(usize, usize)>>, // All unmatched brackets in document
+    pub bracket_highlights: Option<&'a BracketHighlight>,
 }
 
 pub struct View {
@@ -75,9 +73,7 @@ impl View {
         cursor_col: usize,
         horizontal_scroll: usize,
         search_state: Option<&SearchState>,
-        matching_bracket: Option<(usize, usize)>,
-        unmatched_bracket: Option<(usize, usize)>,
-        all_unmatched_brackets: Option<&Vec<(usize, usize)>>,
+        bracket_highlights: Option<&BracketHighlight>,
     ) -> String {
         let mut result = String::new();
         let chars: Vec<char> = text.chars().collect();
@@ -120,27 +116,34 @@ impl View {
                     && actual_col == cursor_col
                     && matches!(*ch, '(' | ')' | '[' | ']' | '{' | '}' | '<' | '>');
 
-                let is_matching_bracket = if let Some((match_line, match_col)) = matching_bracket {
-                    line_idx == match_line
-                        && actual_col == match_col
-                        && matches!(*ch, '(' | ')' | '[' | ']' | '{' | '}' | '<' | '>')
+                let is_matching_bracket = if let Some(highlights) = bracket_highlights {
+                    if let Some((match_line, match_col)) = highlights.matching {
+                        line_idx == match_line
+                            && actual_col == match_col
+                            && matches!(*ch, '(' | ')' | '[' | ']' | '{' | '}' | '<' | '>')
+                    } else {
+                        false
+                    }
                 } else {
                     false
                 };
 
                 // Check if this position is an unmatched bracket (cursor-specific)
-                let is_cursor_unmatched_bracket =
-                    if let Some((unmatch_line, unmatch_col)) = unmatched_bracket {
+                let is_cursor_unmatched_bracket = if let Some(highlights) = bracket_highlights {
+                    if let Some((unmatch_line, unmatch_col)) = highlights.unmatched_at_cursor {
                         line_idx == unmatch_line
                             && actual_col == unmatch_col
                             && matches!(*ch, '(' | ')' | '[' | ']' | '{' | '}' | '<' | '>')
                     } else {
                         false
-                    };
+                    }
+                } else {
+                    false
+                };
 
                 // Check if this position is in the list of all unmatched brackets
-                let is_all_unmatched_bracket = if let Some(all_unmatched) = all_unmatched_brackets {
-                    all_unmatched.iter().any(|(unmatch_line, unmatch_col)| {
+                let is_all_unmatched_bracket = if let Some(highlights) = bracket_highlights {
+                    highlights.all_unmatched.iter().any(|(unmatch_line, unmatch_col)| {
                         line_idx == *unmatch_line
                             && actual_col == *unmatch_col
                             && matches!(*ch, '(' | ')' | '[' | ']' | '{' | '}' | '<' | '>')
@@ -180,7 +183,7 @@ impl View {
         result
     }
 
-    pub fn render<'a>(&mut self, doc: &Document, params: &RenderParams<'a>) -> io::Result<()> {
+    pub fn render<'a>(&mut self, view_model: &dyn ViewModel, params: &RenderParams<'a>) -> io::Result<()> {
         let (width, height) = size()?;
         let start_line = if params.buffer_info.is_some() {
             1usize
@@ -249,7 +252,7 @@ impl View {
         // Calculate line number width and text offset
         let line_num_width = if self.show_line_numbers {
             // Calculate width needed for line numbers (based on total lines)
-            let total_lines = doc.line_count();
+            let total_lines = view_model.get_line_count();
             if total_lines == 0 {
                 4
             } else {
@@ -267,7 +270,7 @@ impl View {
         };
 
         // Adjust scrolling to keep cursor visible
-        self.adjust_scroll_to_cursor(doc, max_lines, text_width);
+        self.adjust_scroll_to_cursor(view_model, max_lines, text_width);
 
         // Get visible lines with scrolling applied
         let visible_lines: Vec<String> = (0..max_lines)
@@ -281,8 +284,8 @@ impl View {
                 };
 
                 // Get the line from document
-                let line = if doc_line_idx < doc.line_count() {
-                    doc.get_line(doc_line_idx).unwrap_or_default()
+                let line = if doc_line_idx < view_model.get_line_count() {
+                    view_model.get_line(doc_line_idx).unwrap_or_default()
                 } else {
                     String::new()
                 };
@@ -307,13 +310,11 @@ impl View {
                 text_part = self.apply_highlighting(
                     &text_part,
                     doc_line_idx,
-                    doc.cursor_line,
-                    doc.cursor_column,
+                    view_model.get_cursor_position().line,
+                    view_model.get_cursor_position().column,
                     self.horizontal_scroll,
                     params.search_state,
-                    params.matching_bracket,
-                    params.unmatched_bracket,
-                    params.all_unmatched_brackets,
+                    params.bracket_highlights,
                 );
 
                 // Add visual selection indicator only when in visual mode
@@ -396,9 +397,10 @@ impl View {
             | Mode::VisualChar
             | Mode::VisualLine
             | Mode::VisualBlock => {
-                let screen_line = doc.cursor_line.saturating_sub(self.scroll_offset) + start_line;
+                let cursor_pos = view_model.get_cursor_position();
+                let screen_line = cursor_pos.line.saturating_sub(self.scroll_offset) + start_line;
                 let screen_column =
-                    doc.cursor_column.saturating_sub(self.horizontal_scroll) + line_num_width;
+                    cursor_pos.column.saturating_sub(self.horizontal_scroll) + line_num_width;
                 (screen_line, screen_column)
             }
             Mode::Command => ((height - 1) as usize, self.last_command_buffer.len() + 1),
@@ -465,9 +467,10 @@ impl View {
         }
     }
 
-    fn adjust_scroll_to_cursor(&mut self, doc: &Document, visible_lines: usize, width: usize) {
-        let cursor_line = doc.cursor_line;
-        let cursor_column = doc.cursor_column;
+    fn adjust_scroll_to_cursor(&mut self, view_model: &dyn ViewModel, visible_lines: usize, width: usize) {
+        let cursor_pos = view_model.get_cursor_position();
+        let cursor_line = cursor_pos.line;
+        let cursor_column = cursor_pos.column;
 
         // Adjust vertical scrolling
         if cursor_line < self.scroll_offset {

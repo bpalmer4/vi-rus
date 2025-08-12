@@ -4,8 +4,7 @@ use crate::insert_controller::InsertController;
 use crate::normal_controller::NormalController;
 use crate::visual_controller::VisualController;
 use crate::command_controller::CommandController;
-use crate::buffer_manager::BufferManager;
-use crate::view::{View, RenderParams};
+use crate::view::{BufferManager, View, RenderParams, DocumentViewModel, BracketHighlight};
 use crate::marks::MarkManager;
 use crate::registers::RegisterManager;
 use crate::search::SearchState;
@@ -108,9 +107,19 @@ impl EditorController {
             // Borrow fields separately to avoid borrowing conflicts
             let doc = self.shared_state.buffer_manager.current_document();
 
-            // Calculate matching bracket position for highlighting
-            let matching_bracket = doc.find_matching_bracket();
-            let unmatched_bracket = doc.is_unmatched_bracket();
+            // Create view model adapter
+            let view_model = DocumentViewModel::new(doc);
+
+            // Create bracket highlights
+            let bracket_highlights = BracketHighlight {
+                matching: doc.find_matching_bracket(),
+                unmatched_at_cursor: doc.is_unmatched_bracket(),
+                all_unmatched: if self.shared_state.show_all_unmatched {
+                    self.shared_state.cached_unmatched_brackets.clone().unwrap_or_default()
+                } else {
+                    Vec::new()
+                },
+            };
 
             let command_buffer_str = self.get_command_buffer_for_mode();
             let params = RenderParams {
@@ -120,15 +129,9 @@ impl EditorController {
                 buffer_info: Some(&buffer_info),
                 visual_selection: self.visual_controller.visual_selection.as_ref(),
                 search_state: Some(&self.shared_state.search_state),
-                matching_bracket,
-                unmatched_bracket,
-                all_unmatched_brackets: if self.shared_state.show_all_unmatched {
-                    self.shared_state.cached_unmatched_brackets.as_ref()
-                } else {
-                    None
-                },
+                bracket_highlights: Some(&bracket_highlights),
             };
-            self.shared_state.view.render(doc, &params)?;
+            self.shared_state.view.render(&view_model, &params)?;
 
             match event::read()? {
                 Event::Key(key_event) => {
