@@ -284,8 +284,18 @@ impl EditorController {
     }
     
     fn refresh_unmatched_cache_if_needed(&mut self) {
-        // TODO: Implement unmatched bracket caching
-        // This was in the original controller
+        // Only refresh cache if show_all_unmatched is enabled and cache is empty
+        if self.shared_state.show_all_unmatched && self.shared_state.cached_unmatched_brackets.is_none() {
+            let unmatched = self.shared_state.session_controller
+                .current_document()
+                .find_all_unmatched_brackets();
+            self.shared_state.cached_unmatched_brackets = Some(unmatched);
+        }
+        
+        // Clear cache if show_all_unmatched is disabled
+        if !self.shared_state.show_all_unmatched && self.shared_state.cached_unmatched_brackets.is_some() {
+            self.shared_state.cached_unmatched_brackets = None;
+        }
     }
     
     /// Apply RC configuration to this editor controller

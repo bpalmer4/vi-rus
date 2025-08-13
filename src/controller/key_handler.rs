@@ -193,14 +193,15 @@ impl KeyHandler {
             }
             // Handle numbers for prefixes
             KeyCode::Char(c) if c.is_ascii_digit() => {
-                let digit = c.to_digit(10).unwrap() as usize;
-                *number_prefix = Some(number_prefix.unwrap_or(0) * 10 + digit);
+                if let Some(digit) = c.to_digit(10) {
+                    *number_prefix = Some(number_prefix.unwrap_or(0) * 10 + digit as usize);
+                }
                 None // Wait for the actual command
             }
 
             // Handle pending multi-key sequences
             KeyCode::Char(c) if pending_key.is_some() => {
-                let pending = pending_key.take().unwrap();
+                let pending = pending_key.take().expect("pending_key was just checked to be Some");
                 let count = number_prefix.take().unwrap_or(1);
 
                 // Handle register sequences first

@@ -113,14 +113,21 @@ impl SearchCommands {
 pub struct SearchReplace;
 
 impl SearchReplace {
-    pub fn substitute_line(
+    pub fn substitute_line_with_flags(
         document: &mut Document,
         line_num: usize,
         pattern: &str,
         replacement: &str,
         global: bool,
+        case_insensitive: bool,
     ) -> Result<usize, String> {
-        let regex = Regex::new(pattern)
+        let pattern_with_flags = if case_insensitive {
+            format!("(?i){}", pattern)
+        } else {
+            pattern.to_string()
+        };
+        
+        let regex = Regex::new(&pattern_with_flags)
             .map_err(|e| format!("Invalid pattern: {}", e))?;
 
         if let Some(line_text) = document.get_line(line_num) {
@@ -149,18 +156,19 @@ impl SearchReplace {
         }
     }
 
-    pub fn substitute_document(
+    pub fn substitute_document_with_flags(
         document: &mut Document,
         pattern: &str,
         replacement: &str,
         global: bool,
+        case_insensitive: bool,
     ) -> Result<(usize, usize), String> {
         let mut total_substitutions = 0;
         let mut lines_affected = 0;
 
         let line_count = document.line_count();
         for line_num in 0..line_count {
-            match Self::substitute_line(document, line_num, pattern, replacement, global) {
+            match Self::substitute_line_with_flags(document, line_num, pattern, replacement, global, case_insensitive) {
                 Ok(count) if count > 0 => {
                     total_substitutions += count;
                     lines_affected += 1;
@@ -173,21 +181,14 @@ impl SearchReplace {
         Ok((total_substitutions, lines_affected))
     }
 
-    pub fn substitute_all_document(
-        document: &mut Document,
-        pattern: &str,
-        replacement: &str,
-    ) -> Result<(usize, usize), String> {
-        Self::substitute_document(document, pattern, replacement, true)
-    }
-
-    pub fn substitute_range(
+    pub fn substitute_range_with_flags(
         document: &mut Document,
         start_line: usize,
         end_line: usize,
         pattern: &str,
         replacement: &str,
         global: bool,
+        case_insensitive: bool,
     ) -> Result<(usize, usize), String> {
         let mut total_substitutions = 0;
         let mut lines_affected = 0;
@@ -196,7 +197,7 @@ impl SearchReplace {
         let end = std::cmp::min(end_line, line_count - 1);
 
         for line_num in start_line..=end {
-            match Self::substitute_line(document, line_num, pattern, replacement, global) {
+            match Self::substitute_line_with_flags(document, line_num, pattern, replacement, global, case_insensitive) {
                 Ok(count) if count > 0 => {
                     total_substitutions += count;
                     lines_affected += 1;

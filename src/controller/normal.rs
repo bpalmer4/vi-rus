@@ -560,9 +560,33 @@ impl NormalController {
             }
 
             // Screen positioning
-            Command::MoveToScreenTop | Command::MoveToScreenMiddle | Command::MoveToScreenBottom => {
-                // TODO: Need to implement screen positioning
-                shared.status_message = "Screen positioning not yet implemented".to_string();
+            Command::MoveToScreenTop => {
+                // H - Move to top of screen
+                let top_line = shared.view.get_scroll_offset();
+                let _ = shared.session_controller.current_document_mut().set_cursor(top_line, 0);
+                shared.session_controller.current_document_mut().move_first_non_whitespace();
+            }
+            Command::MoveToScreenMiddle => {
+                // M - Move to middle of screen
+                let scroll_offset = shared.view.get_scroll_offset();
+                let visible_lines = shared.view.get_visible_lines_count();
+                let middle_line = scroll_offset + (visible_lines / 2);
+                let doc = shared.session_controller.current_document_mut();
+                let max_line = doc.line_count().saturating_sub(1);
+                let target_line = middle_line.min(max_line);
+                let _ = doc.set_cursor(target_line, 0);
+                doc.move_first_non_whitespace();
+            }
+            Command::MoveToScreenBottom => {
+                // L - Move to bottom of screen
+                let scroll_offset = shared.view.get_scroll_offset();
+                let visible_lines = shared.view.get_visible_lines_count();
+                let bottom_line = scroll_offset + visible_lines.saturating_sub(1);
+                let doc = shared.session_controller.current_document_mut();
+                let max_line = doc.line_count().saturating_sub(1);
+                let target_line = bottom_line.min(max_line);
+                let _ = doc.set_cursor(target_line, 0);
+                doc.move_first_non_whitespace();
             }
 
             _ => {} // Should not reach here

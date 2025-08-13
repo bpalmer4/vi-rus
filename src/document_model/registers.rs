@@ -67,11 +67,12 @@ impl RegisterManager {
                     }
                     'A'..='Z' => {
                         // Uppercase: append to register content
-                        let lowercase = name.to_lowercase().next().unwrap();
-                        if let Some(existing) = self.named_registers.get_mut(&lowercase) {
-                            existing.content.push_str(&content);
-                        } else {
-                            self.named_registers.insert(lowercase, data);
+                        if let Some(lowercase) = name.to_lowercase().next() {
+                            if let Some(existing) = self.named_registers.get_mut(&lowercase) {
+                                existing.content.push_str(&content);
+                            } else {
+                                self.named_registers.insert(lowercase, data);
+                            }
                         }
                     }
                     '"' => {
@@ -103,13 +104,14 @@ impl RegisterManager {
                 match name {
                     'a'..='z' => self.named_registers.get(&name),
                     'A'..='Z' => {
-                        let lowercase = name.to_lowercase().next().unwrap();
-                        self.named_registers.get(&lowercase)
+                        name.to_lowercase().next()
+                            .and_then(|lowercase| self.named_registers.get(&lowercase))
                     }
                     '"' => Some(&self.unnamed_register),
                     '0'..='9' => {
-                        let index = name.to_digit(10).unwrap() as usize;
-                        Some(&self.numbered_registers[index])
+                        name.to_digit(10)
+                            .map(|digit| digit as usize)
+                            .and_then(|index| self.numbered_registers.get(index))
                     }
                     _ => Some(&self.unnamed_register), // Invalid register, return unnamed
                 }

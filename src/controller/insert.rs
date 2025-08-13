@@ -48,6 +48,8 @@ impl ModeController for InsertController {
                 }
                 Command::InsertChar(c) => {
                     shared.session_controller.current_document_mut().insert_char(c);
+                    // Invalidate bracket cache on modification
+                    shared.cached_unmatched_brackets = None;
                     // Mark change position
                     let doc = shared.session_controller.current_document();
                     shared.mark_manager
@@ -55,6 +57,8 @@ impl ModeController for InsertController {
                 }
                 Command::InsertNewline => {
                     shared.session_controller.current_document_mut().insert_newline();
+                    // Invalidate bracket cache on modification
+                    shared.cached_unmatched_brackets = None;
                     // Mark change position
                     let doc = shared.session_controller.current_document();
                     shared.mark_manager
@@ -63,9 +67,13 @@ impl ModeController for InsertController {
                 Command::InsertTab => {
                     let tab_width = shared.view.get_tab_stop();
                     shared.session_controller.current_document_mut().insert_tab_or_spaces(tab_width);
+                    // Invalidate bracket cache on modification
+                    shared.cached_unmatched_brackets = None;
                 }
                 Command::DeleteChar => {
                     shared.session_controller.current_document_mut().delete_char();
+                    // Invalidate bracket cache on modification
+                    shared.cached_unmatched_brackets = None;
                 }
                 // Movement commands in insert mode
                 Command::MoveLeft => {

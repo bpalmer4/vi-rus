@@ -129,13 +129,20 @@ impl CommandController {
                 }
                 Some(false)
             }
-            _ if trimmed.starts_with("b") && trimmed[1..].parse::<usize>().is_ok() => {
-                let buffer_num = trimmed[1..].parse::<usize>().unwrap();
-                match shared.session_controller.switch_to_buffer(buffer_num) {
-                    Ok(msg) => shared.status_message = msg,
-                    Err(msg) => shared.status_message = msg,
+            _ if trimmed.starts_with("b") => {
+                match trimmed[1..].parse::<usize>() {
+                    Ok(buffer_num) => {
+                        match shared.session_controller.switch_to_buffer(buffer_num) {
+                            Ok(msg) => shared.status_message = msg,
+                            Err(msg) => shared.status_message = msg,
+                        }
+                        Some(false)
+                    }
+                    Err(_) => {
+                        shared.status_message = "Invalid buffer number".to_string();
+                        Some(false)
+                    }
                 }
-                Some(false)
             }
             _ if trimmed.starts_with("bf ") => {
                 // Switch to buffer by filename
@@ -494,38 +501,42 @@ impl CommandController {
                 
                 // Parse flags
                 let global_flag = flags.contains('g');
-                let _case_insensitive = flags.contains('i'); // TODO: implement case sensitivity
+                let case_insensitive = flags.contains('i');
                 
                 // Execute the substitution based on range type
                 let result = match range_type {
                     RangeType::Global => {
                         // %s - substitute in entire document
-                        crate::controller::search_commands::SearchReplace::substitute_all_document(
+                        crate::controller::search_commands::SearchReplace::substitute_document_with_flags(
                             shared.session_controller.current_document_mut(),
                             pattern,
                             replacement,
+                            global_flag,
+                            case_insensitive,
                         )
                     }
                     RangeType::CurrentLine => {
                         // s - substitute in current line only
                         let current_line = shared.session_controller.current_document().cursor_line();
-                        crate::controller::search_commands::SearchReplace::substitute_line(
+                        crate::controller::search_commands::SearchReplace::substitute_line_with_flags(
                             shared.session_controller.current_document_mut(),
                             current_line,
                             pattern,
                             replacement,
                             global_flag,
+                            case_insensitive,
                         ).map(|count| (count, if count > 0 { 1 } else { 0 }))
                     }
                     RangeType::LineRange(start, end) => {
                         // 5,10s - substitute in specified line range
-                        crate::controller::search_commands::SearchReplace::substitute_range(
+                        crate::controller::search_commands::SearchReplace::substitute_range_with_flags(
                             shared.session_controller.current_document_mut(),
                             start,
                             end,
                             pattern,
                             replacement,
                             global_flag,
+                            case_insensitive,
                         )
                     }
                 };
