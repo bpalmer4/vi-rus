@@ -15,9 +15,11 @@ pub mod key_handler;
 pub mod visual_mode;
 pub mod yank_paste;
 pub mod search_commands;
+pub mod session_controller;
 
 // Re-export public interface
 pub use editor::EditorController;
 pub use shared_state::SharedEditorState;
 pub use command_types::Mode;
 pub use visual_mode::Selection;
+pub use session_controller::SessionController;

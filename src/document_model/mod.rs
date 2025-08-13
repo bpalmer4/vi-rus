@@ -14,8 +14,7 @@ pub mod undo;
 
 // Re-export main types for convenience
 pub use document::{Document, LineEnding};
-pub use text_buffer::{TextBuffer, Position};
+pub use text_buffer::Position;
 pub use search_state::{SearchState, SearchDirection, SearchError};
 pub use marks::MarkManager;
 pub use registers::{RegisterManager, RegisterType};
-pub use undo::UndoManager;

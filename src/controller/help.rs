@@ -292,23 +292,11 @@ pub fn create_help_document() -> Document {
         "😊".to_string(),
     ];
 
-    // Create a document with the help content using TextBuffer's from_string method
-    use crate::document_model::TextBuffer;
-    use std::collections::HashMap;
+    // Create a document with the help content
     
     let help_content = help_lines.join("\n");
     
-    let help_doc = Document {
-        text_buffer: TextBuffer::from_string(help_content),
-        cursor_line: 0,
-        cursor_column: 0,
-        filename: None,
-        modified: false,
-        line_ending: crate::document_model::LineEnding::Unix,
-        expand_tab: true,
-        local_marks: HashMap::new(),
-        undo_manager: crate::document_model::UndoManager::new(),
-    };
+    let help_doc = Document::from_string(help_content);
     help_doc
 }
 
@@ -318,21 +306,9 @@ mod tests {
 
     #[test]
     fn test_simple_multiline_document() {
-        use crate::document_model::TextBuffer;
-        use std::collections::HashMap;
         
         let simple_content = "Line 1\nLine 2\nLine 3".to_string();
-        let simple_doc = Document {
-            text_buffer: TextBuffer::from_string(simple_content),
-            cursor_line: 0,
-            cursor_column: 0,
-            filename: None,
-            modified: false,
-            line_ending: crate::document_model::LineEnding::Unix,
-            expand_tab: true,
-            local_marks: HashMap::new(),
-            undo_manager: crate::document_model::UndoManager::new(),
-        };
+        let simple_doc = Document::from_string(simple_content);
         
         assert_eq!(simple_doc.line_count(), 3);
         assert_eq!(simple_doc.get_line(0).unwrap_or_default(), "Line 1");
@@ -342,21 +318,9 @@ mod tests {
     
     #[test] 
     fn test_unicode_content() {
-        use crate::document_model::TextBuffer;
-        use std::collections::HashMap;
         
         let unicode_content = "  h, ← - Move left\n  j, ↓ - Move down\n  k, ↑ - Move up".to_string();
-        let unicode_doc = Document {
-            text_buffer: TextBuffer::from_string(unicode_content),
-            cursor_line: 0,
-            cursor_column: 0,
-            filename: None,
-            modified: false,
-            line_ending: crate::document_model::LineEnding::Unix,
-            expand_tab: true,
-            local_marks: HashMap::new(),
-            undo_manager: crate::document_model::UndoManager::new(),
-        };
+        let unicode_doc = Document::from_string(unicode_content);
         
         println!("Unicode test - {} lines:", unicode_doc.line_count());
         for i in 0..unicode_doc.line_count() {
@@ -373,21 +337,9 @@ mod tests {
     
     #[test] 
     fn test_various_unicode_characters() {
-        use crate::document_model::TextBuffer;
-        use std::collections::HashMap;
         
         let content = "😀 emoji\n🔥 fire\n✅ checkmark\nкириллица\n中文字符\n→←↑↓ arrows".to_string();
-        let doc = Document {
-            text_buffer: TextBuffer::from_string(content),
-            cursor_line: 0,
-            cursor_column: 0,
-            filename: None,
-            modified: false,
-            line_ending: crate::document_model::LineEnding::Unix,
-            expand_tab: true,
-            local_marks: HashMap::new(),
-            undo_manager: crate::document_model::UndoManager::new(),
-        };
+        let doc = Document::from_string(content);
         
         println!("Various Unicode test - {} lines:", doc.line_count());
         for i in 0..doc.line_count() {

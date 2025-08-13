@@ -239,13 +239,25 @@ impl PieceTable {
         }
 
         // Apply changes in reverse order to maintain indices
+        // First, collect the insert operations and sort them
+        let mut sorted_adds: Vec<_> = pieces_to_add.into_iter().collect();
+        sorted_adds.sort_by_key(|(i, _)| *i);
+        
+        // Remove pieces in reverse order 
         for &i in pieces_to_remove.iter().rev() {
             self.pieces.remove(i);
         }
 
-        for (i, new_pieces) in pieces_to_add.into_iter().rev() {
+        // Adjust insert indices based on how many pieces were removed before each position
+        for (original_i, new_pieces) in sorted_adds.into_iter() {
+            // Count how many pieces were removed before this position
+            let removed_before = pieces_to_remove.iter().filter(|&&removed_i| removed_i < original_i).count();
+            let adjusted_i = original_i - removed_before;
+            
+            // Insert the new pieces at the adjusted position
             for (j, piece) in new_pieces.into_iter().enumerate() {
-                self.pieces.insert(i + j, piece);
+                let insert_pos = (adjusted_i + j).min(self.pieces.len());
+                self.pieces.insert(insert_pos, piece);
             }
         }
 
@@ -258,10 +270,26 @@ impl PieceTable {
         
         for piece in &self.pieces {
             let text = match piece.buffer {
-                BufferType::Original => &self.original[piece.start..piece.start + piece.length],
-                BufferType::Add => &self.add[piece.start..piece.start + piece.length],
+                BufferType::Original => {
+                    if piece.start <= self.original.len() {
+                        Self::safe_substring(&self.original, piece.start, piece.start + piece.length)
+                    } else {
+                        eprintln!("Warning: Invalid piece start in original buffer - start: {}, buffer len: {}", 
+                                piece.start, self.original.len());
+                        String::new()
+                    }
+                },
+                BufferType::Add => {
+                    if piece.start <= self.add.len() {
+                        Self::safe_substring(&self.add, piece.start, piece.start + piece.length)
+                    } else {
+                        eprintln!("Warning: Invalid piece start in add buffer - start: {}, buffer len: {}", 
+                                piece.start, self.add.len());
+                        String::new()
+                    }
+                },
             };
-            result.push_str(text);
+            result.push_str(&text);
         }
         
         result
@@ -291,12 +319,28 @@ impl PieceTable {
             let piece_end_in_range = (end - current_offset).min(piece.length);
 
             let text = match piece.buffer {
-                BufferType::Original => &self.original[piece.start..piece.start + piece.length],
-                BufferType::Add => &self.add[piece.start..piece.start + piece.length],
+                BufferType::Original => {
+                    if piece.start <= self.original.len() {
+                        Self::safe_substring(&self.original, piece.start, piece.start + piece.length)
+                    } else {
+                        eprintln!("Warning: Invalid piece start in original buffer (get_range) - start: {}, buffer len: {}", 
+                                piece.start, self.original.len());
+                        String::new()
+                    }
+                },
+                BufferType::Add => {
+                    if piece.start <= self.add.len() {
+                        Self::safe_substring(&self.add, piece.start, piece.start + piece.length)
+                    } else {
+                        eprintln!("Warning: Invalid piece start in add buffer (get_range) - start: {}, buffer len: {}", 
+                                piece.start, self.add.len());
+                        String::new()
+                    }
+                },
             };
 
             // Ensure we slice at UTF-8 character boundaries
-            let safe_text = Self::safe_substring(text, piece_start_in_range, piece_end_in_range);
+            let safe_text = Self::safe_substring(&text, piece_start_in_range, piece_end_in_range);
             result.push_str(&safe_text);
             current_offset = piece_end;
         }
@@ -315,8 +359,24 @@ impl PieceTable {
             if current_offset + piece.length > position {
                 let char_pos = position - current_offset;
                 let text = match piece.buffer {
-                    BufferType::Original => &self.original[piece.start..piece.start + piece.length],
-                    BufferType::Add => &self.add[piece.start..piece.start + piece.length],
+                    BufferType::Original => {
+                        if piece.start <= self.original.len() {
+                            Self::safe_substring(&self.original, piece.start, piece.start + piece.length)
+                        } else {
+                            eprintln!("Warning: Invalid piece start in original buffer (char_at) - start: {}, buffer len: {}", 
+                                    piece.start, self.original.len());
+                            String::new()
+                        }
+                    },
+                    BufferType::Add => {
+                        if piece.start <= self.add.len() {
+                            Self::safe_substring(&self.add, piece.start, piece.start + piece.length)
+                        } else {
+                            eprintln!("Warning: Invalid piece start in add buffer (char_at) - start: {}, buffer len: {}", 
+                                    piece.start, self.add.len());
+                            String::new()
+                        }
+                    },
                 };
                 return text.chars().nth(char_pos);
             }
@@ -473,6 +533,26 @@ mod tests {
         let mut table = PieceTable::from_string("HelloWorld!".to_string());
         table.insert(5, ", ");
         assert_eq!(table.get_text(), "Hello, World!");
+    }
+
+    #[test]
+    fn test_delete_index_bounds() {
+        // This test specifically checks the bug where delete operations
+        // could cause insert index out of bounds errors
+        let mut table = PieceTable::new();
+        table.insert(0, "Hello World");
+        
+        // Delete middle portion - this should split a piece and require proper index management
+        table.delete(5, 6); // Remove " World"
+        assert_eq!(table.get_text(), "Hello");
+        
+        // Test another deletion that could trigger the index bug
+        table.insert(5, " Beautiful Day");
+        assert_eq!(table.get_text(), "Hello Beautiful Day");
+        
+        // Delete overlapping multiple pieces
+        table.delete(5, 10); // Remove " Beautiful"
+        assert_eq!(table.get_text(), "Hello Day");
     }
 
     #[test]

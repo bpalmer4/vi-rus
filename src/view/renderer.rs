@@ -8,6 +8,7 @@ use crossterm::{
     terminal::{Clear, ClearType, size},
 };
 use std::io::{self, Write, stdout};
+use unicode_width::UnicodeWidthChar;
 
 #[derive(Clone)]
 pub struct RenderParams<'a> {
@@ -399,8 +400,12 @@ impl View {
             | Mode::VisualBlock => {
                 let cursor_pos = view_model.get_cursor_position();
                 let screen_line = cursor_pos.line.saturating_sub(self.scroll_offset) + start_line;
-                let screen_column =
-                    cursor_pos.column.saturating_sub(self.horizontal_scroll) + line_num_width;
+                
+                // Convert logical cursor position to display column position
+                let line_content = view_model.get_line(cursor_pos.line).unwrap_or_default();
+                let display_column = self.calculate_display_column(&line_content, cursor_pos.column);
+                let screen_column = display_column.saturating_sub(self.horizontal_scroll) + line_num_width;
+                
                 (screen_line, screen_column)
             }
             Mode::Command => ((height - 1) as usize, self.last_command_buffer.len() + 1),
@@ -493,5 +498,63 @@ impl View {
             self.horizontal_scroll = cursor_column - width + 1;
             self.needs_full_redraw = true;
         }
+    }
+
+    /// Convert logical character position to display column position
+    /// Accounts for tab expansion and Unicode character widths
+    fn calculate_display_column(&self, text: &str, logical_pos: usize) -> usize {
+        let chars: Vec<char> = text.chars().collect();
+        let mut display_col = 0;
+        
+        for i in 0..logical_pos.min(chars.len()) {
+            match chars[i] {
+                '\t' => {
+                    // Move to next tab stop
+                    display_col = ((display_col / self.tab_stop) + 1) * self.tab_stop;
+                }
+                c => {
+                    // Use unicode-width crate for proper Unicode handling
+                    display_col += c.width().unwrap_or(1);
+                }
+            }
+        }
+        display_col
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_calculate_display_column() {
+        let view = View::new();
+        
+        // Test ASCII characters
+        assert_eq!(view.calculate_display_column("abc", 0), 0);
+        assert_eq!(view.calculate_display_column("abc", 1), 1);
+        assert_eq!(view.calculate_display_column("abc", 3), 3);
+        
+        // Test tab characters (default tab_stop = 4)
+        assert_eq!(view.calculate_display_column("a\tb", 0), 0); // 'a' at position 0
+        assert_eq!(view.calculate_display_column("a\tb", 1), 1); // tab at position 1
+        assert_eq!(view.calculate_display_column("a\tb", 2), 4); // 'b' at position 4 (after tab)
+        
+        // Test tab alignment
+        assert_eq!(view.calculate_display_column("\t", 1), 4);   // tab from 0 goes to 4
+        assert_eq!(view.calculate_display_column("a\t", 2), 4);  // tab from 1 goes to 4
+        assert_eq!(view.calculate_display_column("ab\t", 3), 4); // tab from 2 goes to 4
+        assert_eq!(view.calculate_display_column("abc\t", 4), 4); // tab from 3 goes to 4
+        assert_eq!(view.calculate_display_column("abcd\t", 5), 8); // tab from 4 goes to 8
+        
+        // Test Unicode characters
+        assert_eq!(view.calculate_display_column("a中b", 0), 0); // 'a'
+        assert_eq!(view.calculate_display_column("a中b", 1), 1); // '中' starts at 1
+        assert_eq!(view.calculate_display_column("a中b", 2), 3); // 'b' at 3 (中 is 2 wide)
+        
+        // Test emojis (wide characters)
+        assert_eq!(view.calculate_display_column("a😀b", 0), 0); // 'a'
+        assert_eq!(view.calculate_display_column("a😀b", 1), 1); // '😀' starts at 1
+        assert_eq!(view.calculate_display_column("a😀b", 2), 3); // 'b' at 3 (😀 is 2 wide)
     }
 }

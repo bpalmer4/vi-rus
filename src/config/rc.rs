@@ -169,19 +169,19 @@ impl RcLoader {
         shared_state.view.set_show_whitespace(config.show_whitespace);
 
         // Apply document settings
-        shared_state.buffer_manager
+        shared_state.session_controller
             .current_document_mut()
             .set_expand_tab(config.expand_tab);
 
         // Apply line ending setting
         match config.line_ending.as_str() {
-            "unix" => shared_state.buffer_manager
+            "unix" => shared_state.session_controller
                 .current_document_mut()
                 .set_line_ending(crate::document_model::LineEnding::Unix),
-            "dos" => shared_state.buffer_manager
+            "dos" => shared_state.session_controller
                 .current_document_mut()
                 .set_line_ending(crate::document_model::LineEnding::Windows),
-            "mac" => shared_state.buffer_manager
+            "mac" => shared_state.session_controller
                 .current_document_mut()
                 .set_line_ending(crate::document_model::LineEnding::Mac),
             _ => {} // Default to Unix

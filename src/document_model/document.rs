@@ -34,16 +34,22 @@ impl LineEnding {
 
 #[derive(Clone)]
 pub struct Document {
-    pub cursor_line: usize,
-    pub cursor_column: usize,
+    // Cursor state - MODULE PRIVATE: controlled access only  
+    pub(super) cursor_line: usize,
+    pub(super) cursor_column: usize,
+    
+    // File metadata - PUBLIC: direct access allowed for now
     pub filename: Option<PathBuf>,
     pub modified: bool,
+    
+    // Format settings - PUBLIC: direct access allowed for now
     pub line_ending: LineEnding,
     pub expand_tab: bool,
-    pub local_marks: HashMap<char, (usize, usize)>, // Local marks (a-z) for this buffer
-    pub undo_manager: UndoManager,
-    // Piece table backend - now the single source of truth
-    pub text_buffer: TextBuffer,
+    
+    // Internal data structures - MODULE PRIVATE: controlled access only
+    local_marks: HashMap<char, (usize, usize)>, // Local marks (a-z) for this buffer
+    pub(super) undo_manager: UndoManager,
+    pub(super) text_buffer: TextBuffer, // Piece table backend - single source of truth
 }
 
 impl Document {
@@ -63,6 +69,20 @@ impl Document {
         }
     }
     
+    /// Create a new document from string content
+    pub fn from_string(content: String) -> Self {
+        Self {
+            cursor_line: 0,
+            cursor_column: 0,
+            filename: None,
+            modified: false,
+            line_ending: LineEnding::Unix,
+            expand_tab: true,
+            local_marks: HashMap::new(),
+            undo_manager: UndoManager::new(),
+            text_buffer: TextBuffer::from_string(content),
+        }
+    }
 
     pub fn from_file(filename: PathBuf) -> Result<Self, std::io::Error> {
         let content = fs::read_to_string(&filename)?;
@@ -95,6 +115,140 @@ impl Document {
 
 
     
+    // === CURSOR MANAGEMENT ===
+    
+    /// Get the current cursor line
+    pub fn cursor_line(&self) -> usize {
+        self.cursor_line
+    }
+    
+    /// Get the current cursor column
+    pub fn cursor_column(&self) -> usize {
+        self.cursor_column
+    }
+    
+    /// Set cursor position with bounds checking
+    pub fn set_cursor(&mut self, line: usize, column: usize) -> Result<(), String> {
+        let line_count = self.line_count();
+        if line >= line_count && line_count > 0 {
+            return Err(format!("Line {} out of bounds (max: {})", line, line_count - 1));
+        }
+        
+        let line_length = self.get_line_length(line);
+        let safe_column = column.min(line_length);
+        
+        self.cursor_line = line;
+        self.cursor_column = safe_column;
+        Ok(())
+    }
+    
+    /// Move cursor to position (clamps to valid bounds)
+    pub fn move_cursor_to(&mut self, line: usize, column: usize) {
+        let line_count = self.line_count();
+        let safe_line = if line_count == 0 { 0 } else { line.min(line_count - 1) };
+        let line_length = self.get_line_length(safe_line);
+        let safe_column = column.min(line_length);
+        
+        self.cursor_line = safe_line;
+        self.cursor_column = safe_column;
+    }
+    
+    // === ADVANCED CURSOR CONTROL ===
+    
+    /// Set only the cursor line (keeping current column, with clamping)
+    pub fn set_cursor_line_only(&mut self, line: usize) -> Result<(), String> {
+        let current_column = self.cursor_column();
+        self.set_cursor(line, current_column)
+    }
+    
+    /// Set only the cursor column (keeping current line, with clamping)
+    pub fn set_cursor_column_only(&mut self, column: usize) -> Result<(), String> {
+        let current_line = self.cursor_line();
+        self.set_cursor(current_line, column)
+    }
+    
+    /// Reset cursor column to 0 (start of line)
+    pub fn reset_cursor_column(&mut self) {
+        let current_line = self.cursor_line();
+        let _ = self.set_cursor(current_line, 0);
+    }
+    
+    /// Move cursor to the end of the current line
+    pub fn move_cursor_to_current_line_end(&mut self) {
+        let current_line = self.cursor_line();
+        let line_length = self.get_line_length(current_line);
+        let _ = self.set_cursor(current_line, line_length);
+    }
+    
+    
+    /// Safe cursor movement - returns true if movement was successful
+    pub fn move_cursor_up(&mut self) -> bool {
+        if self.cursor_line() > 0 {
+            let _ = self.set_cursor_line_only(self.cursor_line() - 1);
+            true
+        } else {
+            false
+        }
+    }
+    
+    /// Safe cursor movement - returns true if movement was successful  
+    pub fn move_cursor_down(&mut self) -> bool {
+        let line_count = self.line_count();
+        if self.cursor_line() + 1 < line_count {
+            let _ = self.set_cursor_line_only(self.cursor_line() + 1);
+            true
+        } else {
+            false
+        }
+    }
+    
+    /// Safe cursor movement - returns true if movement was successful
+    pub fn move_cursor_left(&mut self) -> bool {
+        if self.cursor_column() > 0 {
+            let _ = self.set_cursor_column_only(self.cursor_column() - 1);
+            true
+        } else {
+            false
+        }
+    }
+    
+    /// Safe cursor movement - returns true if movement was successful
+    pub fn move_cursor_right(&mut self) -> bool {
+        let current_line_length = self.get_line_length(self.cursor_line());
+        if self.cursor_column() < current_line_length {
+            let _ = self.set_cursor_column_only(self.cursor_column() + 1);
+            true
+        } else {
+            false
+        }
+    }
+    
+    /// Clamp cursor column to current line bounds (used after line content changes)
+    pub fn clamp_cursor_column_to_current_line(&mut self) {
+        let current_line = self.cursor_line();
+        let current_column = self.cursor_column();
+        let line_length = self.get_line_length(current_line);
+        
+        if current_column > line_length {
+            let _ = self.set_cursor(current_line, line_length);
+        }
+    }
+    
+    
+
+    // === UNDO MANAGEMENT ===
+    
+    /// Get mutable reference to undo manager
+    pub fn undo_manager_mut(&mut self) -> &mut UndoManager {
+        &mut self.undo_manager
+    }
+    
+    /// Get mutable reference to text buffer  
+    pub fn text_buffer_mut(&mut self) -> &mut TextBuffer {
+        &mut self.text_buffer
+    }
+    
+
     // Get line count from piece table
     pub fn line_count(&self) -> usize {
         let mut text_buffer = self.text_buffer.clone();
@@ -302,7 +456,7 @@ impl Document {
     }
 
     pub fn insert_text_at_cursor(&mut self, text: &str) -> Result<usize, std::io::Error> {
-        self.insert_text_at_line(text, self.cursor_line + 1)
+        self.insert_text_at_line(text, self.cursor_line() + 1)
     }
 
 
@@ -342,45 +496,19 @@ impl Document {
         Ok(byte_count)
     }
 
-    pub fn move_cursor_up(&mut self) {
-        if self.cursor_line > 0 {
-            self.cursor_line -= 1;
-            self.clamp_cursor_column();
-        }
-    }
-
-    pub fn move_cursor_down(&mut self) {
-        if self.cursor_line < self.line_count() - 1 {
-            self.cursor_line += 1;
-            self.clamp_cursor_column();
-        }
-    }
-
-    pub fn move_cursor_left(&mut self) {
-        if self.cursor_column > 0 {
-            self.cursor_column -= 1;
-        }
-    }
-
-    pub fn move_cursor_right(&mut self) {
-        let line_len = self.get_line_length(self.cursor_line);
-        if self.cursor_column < line_len {
-            self.cursor_column += 1;
-        }
-    }
 
     pub fn insert_char(&mut self, c: char) {
         // Record undo action
         self.undo_manager
             .add_action(super::undo::UndoAction::InsertText {
-                line: self.cursor_line,
-                column: self.cursor_column,
+                line: self.cursor_line(),
+                column: self.cursor_column(),
                 text: c.to_string(),
             });
 
         // Use piece table for insertion
         use super::text_buffer::Position;
-        let pos = Position::new(self.cursor_line, self.cursor_column);
+        let pos = Position::new(self.cursor_line(), self.cursor_column());
         self.text_buffer.insert(pos, &c.to_string());
         
         self.cursor_column += 1;
@@ -388,9 +516,9 @@ impl Document {
     }
 
     pub fn insert_newline(&mut self) {
-        let current_line = self.get_line(self.cursor_line).unwrap_or_default();
-        let new_line = if self.cursor_column < current_line.len() {
-            current_line[self.cursor_column..].to_string()
+        let current_line = self.get_line(self.cursor_line()).unwrap_or_default();
+        let new_line = if self.cursor_column() < current_line.len() {
+            current_line[self.cursor_column()..].to_string()
         } else {
             String::new()
         };
@@ -398,57 +526,57 @@ impl Document {
         // Record undo action for splitting the line
         self.undo_manager
             .add_action(super::undo::UndoAction::SplitLine {
-                line: self.cursor_line,
-                column: self.cursor_column,
+                line: self.cursor_line(),
+                column: self.cursor_column(),
                 text: new_line.clone(),
             });
 
         // Use piece table for newline insertion
         use super::text_buffer::Position;
-        let pos = Position::new(self.cursor_line, self.cursor_column);
+        let pos = Position::new(self.cursor_line(), self.cursor_column());
         self.text_buffer.insert_newline(pos);
 
         self.cursor_line += 1;
-        self.cursor_column = 0;
+        self.reset_cursor_column();
         self.modified = true;
         
         // Update marks: new line created at cursor_line (after increment)
-        self.update_marks_line_inserted(self.cursor_line);
+        self.update_marks_line_inserted(self.cursor_line());
     }
 
     pub fn delete_char(&mut self) {
         use super::text_buffer::Position;
         
-        if self.cursor_column > 0 {
+        if self.cursor_column() > 0 {
             // Delete character before cursor
-            let pos = Position::new(self.cursor_line, self.cursor_column - 1);
+            let pos = Position::new(self.cursor_line(), self.cursor_column() - 1);
             let deleted_char = self.text_buffer.char_at(pos).unwrap_or(' ');
             
             self.undo_manager
                 .add_action(super::undo::UndoAction::DeleteText {
-                    line: self.cursor_line,
-                    column: self.cursor_column - 1,
+                    line: self.cursor_line(),
+                    column: self.cursor_column() - 1,
                     text: deleted_char.to_string(),
                 });
 
             self.text_buffer.delete_char(pos);
             self.cursor_column -= 1;
             self.modified = true;
-        } else if self.cursor_line > 0 {
+        } else if self.cursor_line() > 0 {
             // Join with previous line
-            let current_line = self.get_line(self.cursor_line).unwrap_or_default();
-            let previous_line_len = self.get_line_length(self.cursor_line - 1);
+            let current_line = self.get_line(self.cursor_line()).unwrap_or_default();
+            let previous_line_len = self.get_line_length(self.cursor_line() - 1);
 
             // Record undo action for joining lines
             self.undo_manager
                 .add_action(super::undo::UndoAction::JoinLines {
-                    line: self.cursor_line - 1,
+                    line: self.cursor_line() - 1,
                     separator: String::new(),
                     second_line_text: current_line.clone(),
                 });
 
             // Delete the newline between lines
-            let pos = Position::new(self.cursor_line - 1, previous_line_len);
+            let pos = Position::new(self.cursor_line() - 1, previous_line_len);
             self.text_buffer.delete_char(pos);
             
             self.cursor_line -= 1;
@@ -459,30 +587,30 @@ impl Document {
 
     pub fn delete_char_forward(&mut self) {
         use super::text_buffer::Position;
-        let pos = Position::new(self.cursor_line, self.cursor_column);
+        let pos = Position::new(self.cursor_line(), self.cursor_column());
         
-        let line_length = self.get_line_length(self.cursor_line);
-        if self.cursor_column < line_length {
+        let line_length = self.get_line_length(self.cursor_line());
+        if self.cursor_column() < line_length {
             // Delete character at cursor
             if let Some(deleted_char) = self.text_buffer.char_at(pos) {
                 self.undo_manager
                     .add_action(super::undo::UndoAction::DeleteText {
-                        line: self.cursor_line,
-                        column: self.cursor_column,
+                        line: self.cursor_line(),
+                        column: self.cursor_column(),
                         text: deleted_char.to_string(),
                     });
                 
                 self.text_buffer.delete_char(pos);
                 self.modified = true;
             }
-        } else if self.cursor_line < self.line_count() - 1 {
+        } else if self.cursor_line() < self.line_count() - 1 {
             // Join with next line
-            let next_line = self.get_line(self.cursor_line + 1).unwrap_or_default();
+            let next_line = self.get_line(self.cursor_line() + 1).unwrap_or_default();
 
             // Record undo action for joining lines
             self.undo_manager
                 .add_action(super::undo::UndoAction::JoinLines {
-                    line: self.cursor_line,
+                    line: self.cursor_line(),
                     separator: String::new(),
                     second_line_text: next_line.clone(),
                 });
@@ -495,42 +623,43 @@ impl Document {
 
     pub fn delete_line(&mut self) {
         if self.line_count() > 1 {
-            self.delete_line_at(self.cursor_line);
-            if self.cursor_line >= self.line_count() {
-                self.cursor_line = self.line_count() - 1;
+            self.delete_line_at(self.cursor_line());
+            if self.cursor_line() >= self.line_count() {
+                let _ = self.set_cursor(self.line_count().saturating_sub(1), 0);
+            } else {
+                let _ = self.set_cursor(self.cursor_line(), 0);
             }
-            self.cursor_column = 0;
             self.modified = true;
         } else {
             // If only one line, clear it
             self.set_line(0, "");
-            self.cursor_column = 0;
+            let _ = self.set_cursor(0, 0);
             self.modified = true;
         }
     }
 
     pub fn delete_to_end_of_line(&mut self) {
-        let line_length = self.get_line_length(self.cursor_line);
-        if self.cursor_column < line_length {
+        let line_length = self.get_line_length(self.cursor_line());
+        if self.cursor_column() < line_length {
             // Delete from cursor to end of line
             use super::text_buffer::{Position, Range};
-            let start_pos = Position::new(self.cursor_line, self.cursor_column);
-            let end_pos = Position::new(self.cursor_line, line_length);
+            let start_pos = Position::new(self.cursor_line(), self.cursor_column());
+            let end_pos = Position::new(self.cursor_line(), line_length);
             let range = Range::new(start_pos, end_pos);
             self.text_buffer.delete(range);
             self.modified = true;
             
             // Adjust cursor if needed
-            let new_line_length = self.get_line_length(self.cursor_line);
-            if self.cursor_column > 0 && self.cursor_column >= new_line_length {
+            let new_line_length = self.get_line_length(self.cursor_line());
+            if self.cursor_column() > 0 && self.cursor_column() >= new_line_length {
                 self.cursor_column = new_line_length.saturating_sub(1);
             }
         }
     }
 
     pub fn delete_word_forward(&mut self) {
-        let original_line = self.cursor_line;
-        let original_column = self.cursor_column;
+        let original_line = self.cursor_line();
+        let original_column = self.cursor_column();
 
         // Move to end of word to delete
         self.move_word_forward();
@@ -538,7 +667,7 @@ impl Document {
         // Delete from original position to current position using piece table
         use super::text_buffer::{Position, Range};
         let start_pos = Position::new(original_line, original_column);
-        let end_pos = Position::new(self.cursor_line, self.cursor_column);
+        let end_pos = Position::new(self.cursor_line(), self.cursor_column());
         let range = Range::new(start_pos, end_pos);
         
         self.text_buffer.delete(range);
@@ -550,8 +679,8 @@ impl Document {
     }
 
     pub fn delete_big_word_forward(&mut self) {
-        let original_line = self.cursor_line;
-        let original_column = self.cursor_column;
+        let original_line = self.cursor_line();
+        let original_column = self.cursor_column();
 
         // Move to end of big word to delete
         self.move_big_word_forward();
@@ -559,7 +688,7 @@ impl Document {
         // Delete from original position to current position using piece table
         use super::text_buffer::{Position, Range};
         let start_pos = Position::new(original_line, original_column);
-        let end_pos = Position::new(self.cursor_line, self.cursor_column);
+        let end_pos = Position::new(self.cursor_line(), self.cursor_column());
         let range = Range::new(start_pos, end_pos);
         
         self.text_buffer.delete(range);
@@ -571,31 +700,31 @@ impl Document {
     }
 
     pub fn delete_char_backward(&mut self) {
-        if self.cursor_column > 0 {
+        if self.cursor_column() > 0 {
             // Delete character before cursor using piece table
             use super::text_buffer::Position;
-            let pos = Position::new(self.cursor_line, self.cursor_column - 1);
+            let pos = Position::new(self.cursor_line(), self.cursor_column() - 1);
             let deleted_char = self.text_buffer.char_at(pos).unwrap_or(' ');
             
             self.undo_manager
                 .add_action(super::undo::UndoAction::DeleteText {
-                    line: self.cursor_line,
-                    column: self.cursor_column - 1,
+                    line: self.cursor_line(),
+                    column: self.cursor_column() - 1,
                     text: deleted_char.to_string(),
                 });
             
             self.text_buffer.delete_char(pos);
             self.cursor_column -= 1;
             self.modified = true;
-        } else if self.cursor_line > 0 {
+        } else if self.cursor_line() > 0 {
             // Join with previous line
-            let current_line = self.delete_line_at(self.cursor_line);
-            let previous_line_len = self.get_line_length(self.cursor_line - 1);
+            let current_line = self.delete_line_at(self.cursor_line());
+            let previous_line_len = self.get_line_length(self.cursor_line() - 1);
 
             // Record undo action for joining lines
             self.undo_manager
                 .add_action(super::undo::UndoAction::JoinLines {
-                    line: self.cursor_line - 1,
+                    line: self.cursor_line() - 1,
                     separator: String::new(),
                     second_line_text: current_line.clone(),
                 });
@@ -604,22 +733,22 @@ impl Document {
             self.cursor_column = previous_line_len;
             // Append the current line content to the previous line using piece table
             use super::text_buffer::Position;
-            let pos = Position::new(self.cursor_line, previous_line_len);
+            let pos = Position::new(self.cursor_line(), previous_line_len);
             self.text_buffer.insert(pos, &current_line);
             self.modified = true;
         }
     }
 
     pub fn delete_word_backward(&mut self) {
-        let original_line = self.cursor_line;
-        let original_column = self.cursor_column;
+        let original_line = self.cursor_line();
+        let original_column = self.cursor_column();
 
         // Move to start of word backward
         self.move_word_backward();
 
         // Delete from current position to original position using piece table
         use super::text_buffer::{Position, Range};
-        let start_pos = Position::new(self.cursor_line, self.cursor_column);
+        let start_pos = Position::new(self.cursor_line(), self.cursor_column());
         let end_pos = Position::new(original_line, original_column);
         let range = Range::new(start_pos, end_pos);
         self.text_buffer.delete(range);
@@ -627,15 +756,15 @@ impl Document {
     }
 
     pub fn delete_big_word_backward(&mut self) {
-        let original_line = self.cursor_line;
-        let original_column = self.cursor_column;
+        let original_line = self.cursor_line();
+        let original_column = self.cursor_column();
 
         // Move to start of big word backward
         self.move_big_word_backward();
 
         // Delete from current position to original position using piece table
         use super::text_buffer::{Position, Range};
-        let start_pos = Position::new(self.cursor_line, self.cursor_column);
+        let start_pos = Position::new(self.cursor_line(), self.cursor_column());
         let end_pos = Position::new(original_line, original_column);
         let range = Range::new(start_pos, end_pos);
         self.text_buffer.delete(range);
@@ -643,15 +772,15 @@ impl Document {
     }
 
     pub fn delete_to_end_of_word(&mut self) {
-        let original_line = self.cursor_line;
-        let original_column = self.cursor_column;
+        let original_line = self.cursor_line();
+        let original_column = self.cursor_column();
 
         // Move to end of word
         self.move_word_end();
 
         // Delete from original position to current position
-        if self.cursor_line == original_line {
-            if original_column < self.cursor_column && self.cursor_column <= self.get_line_length(self.cursor_line) {
+        if self.cursor_line() == original_line {
+            if original_column < self.cursor_column() && self.cursor_column() <= self.get_line_length(self.cursor_line()) {
                 // Complex drain operation needs manual conversion;
                 self.cursor_column = original_column;
                 self.modified = true;
@@ -661,15 +790,15 @@ impl Document {
     }
 
     pub fn delete_to_end_of_big_word(&mut self) {
-        let original_line = self.cursor_line;
-        let original_column = self.cursor_column;
+        let original_line = self.cursor_line();
+        let original_column = self.cursor_column();
 
         // Move to end of big word
         self.move_big_word_end();
 
         // Delete from original position to current position
-        if self.cursor_line == original_line {
-            if original_column < self.cursor_column && self.cursor_column <= self.get_line_length(self.cursor_line) {
+        if self.cursor_line() == original_line {
+            if original_column < self.cursor_column() && self.cursor_column() <= self.get_line_length(self.cursor_line()) {
                 // Complex drain operation needs manual conversion;
                 self.cursor_column = original_column;
                 self.modified = true;
@@ -678,21 +807,21 @@ impl Document {
     }
 
     pub fn delete_to_start_of_line(&mut self) {
-        if self.cursor_column > 0 {
+        if self.cursor_column() > 0 {
             // Complex drain operation needs manual conversion;
-            self.cursor_column = 0;
+            self.reset_cursor_column();
             self.modified = true;
         }
     }
 
     pub fn delete_to_first_non_whitespace(&mut self) {
-        let line = self.get_line(self.cursor_line).unwrap_or_default().clone();
+        let line = self.get_line(self.cursor_line()).unwrap_or_default().clone();
         let first_non_ws = line.chars().position(|c| !c.is_whitespace()).unwrap_or(0);
 
-        if self.cursor_column > first_non_ws {
+        if self.cursor_column() > first_non_ws {
             use super::text_buffer::{Position, Range};
-            let start_pos = Position::new(self.cursor_line, first_non_ws);
-            let end_pos = Position::new(self.cursor_line, self.cursor_column);
+            let start_pos = Position::new(self.cursor_line(), first_non_ws);
+            let end_pos = Position::new(self.cursor_line(), self.cursor_column());
             let range = Range::new(start_pos, end_pos);
             self.text_buffer.delete(range);
             self.cursor_column = first_non_ws;
@@ -701,12 +830,12 @@ impl Document {
     }
 
     pub fn delete_to_end_of_file(&mut self) {
-        if self.cursor_line < self.line_count() - 1
-            || self.cursor_column < self.get_line_length(self.cursor_line)
+        if self.cursor_line() < self.line_count() - 1
+            || self.cursor_column() < self.get_line_length(self.cursor_line())
         {
             // Delete from cursor to end of file using piece table
             use super::text_buffer::{Position, Range};
-            let start_pos = Position::new(self.cursor_line, self.cursor_column);
+            let start_pos = Position::new(self.cursor_line(), self.cursor_column());
             let last_line = self.line_count() - 1;
             let last_column = self.get_line_length(last_line);
             let end_pos = Position::new(last_line, last_column);
@@ -717,16 +846,16 @@ impl Document {
     }
 
     pub fn delete_to_start_of_file(&mut self) {
-        if self.cursor_line > 0 || self.cursor_column > 0 {
+        if self.cursor_line() > 0 || self.cursor_column() > 0 {
             // Delete from start of file to cursor using piece table
             use super::text_buffer::{Position, Range};
             let start_pos = Position::new(0, 0);
-            let end_pos = Position::new(self.cursor_line, self.cursor_column);
+            let end_pos = Position::new(self.cursor_line(), self.cursor_column());
             let range = Range::new(start_pos, end_pos);
             self.text_buffer.delete(range);
             
             self.cursor_line = 0;
-            self.cursor_column = 0;
+            self.reset_cursor_column();
             self.modified = true;
         }
     }
@@ -738,18 +867,18 @@ impl Document {
 
     pub fn substitute_line(&mut self) {
         // Clear current line and move cursor to beginning
-        self.set_line(self.cursor_line, "");
-        self.cursor_column = 0;
+        self.set_line(self.cursor_line(), "");
+        self.reset_cursor_column();
         self.modified = true;
     }
 
     pub fn delete_until_char(&mut self, target: char) {
-        let line = self.get_line(self.cursor_line).unwrap_or_default();
-        if let Some(pos) = line[self.cursor_column + 1..].find(target) {
-            let end_pos = self.cursor_column + 1 + pos;
+        let line = self.get_line(self.cursor_line()).unwrap_or_default();
+        if let Some(pos) = line[self.cursor_column() + 1..].find(target) {
+            let end_pos = self.cursor_column() + 1 + pos;
             use super::text_buffer::{Position, Range};
-            let start_pos = Position::new(self.cursor_line, self.cursor_column);
-            let end_pos = Position::new(self.cursor_line, end_pos);
+            let start_pos = Position::new(self.cursor_line(), self.cursor_column());
+            let end_pos = Position::new(self.cursor_line(), end_pos);
             let range = Range::new(start_pos, end_pos);
             self.text_buffer.delete(range);
             self.modified = true;
@@ -757,11 +886,11 @@ impl Document {
     }
 
     pub fn delete_until_char_backward(&mut self, target: char) {
-        let line = self.get_line(self.cursor_line).unwrap_or_default();
-        if let Some(pos) = line[..self.cursor_column].rfind(target) {
+        let line = self.get_line(self.cursor_line()).unwrap_or_default();
+        if let Some(pos) = line[..self.cursor_column()].rfind(target) {
             use super::text_buffer::{Position, Range};
-            let start_pos = Position::new(self.cursor_line, pos + 1);
-            let end_pos = Position::new(self.cursor_line, self.cursor_column);
+            let start_pos = Position::new(self.cursor_line(), pos + 1);
+            let end_pos = Position::new(self.cursor_line(), self.cursor_column());
             let range = Range::new(start_pos, end_pos);
             self.text_buffer.delete(range);
             self.cursor_column = pos + 1;
@@ -770,12 +899,12 @@ impl Document {
     }
 
     pub fn delete_find_char(&mut self, target: char) {
-        let line = self.get_line(self.cursor_line).unwrap_or_default();
-        if let Some(pos) = line[self.cursor_column + 1..].find(target) {
-            let end_pos = self.cursor_column + 1 + pos + 1; // Include the target char
+        let line = self.get_line(self.cursor_line()).unwrap_or_default();
+        if let Some(pos) = line[self.cursor_column() + 1..].find(target) {
+            let end_pos = self.cursor_column() + 1 + pos + 1; // Include the target char
             use super::text_buffer::{Position, Range};
-            let start_pos = Position::new(self.cursor_line, self.cursor_column);
-            let end_pos = Position::new(self.cursor_line, end_pos);
+            let start_pos = Position::new(self.cursor_line(), self.cursor_column());
+            let end_pos = Position::new(self.cursor_line(), end_pos);
             let range = Range::new(start_pos, end_pos);
             self.text_buffer.delete(range);
             self.modified = true;
@@ -783,11 +912,11 @@ impl Document {
     }
 
     pub fn delete_find_char_backward(&mut self, target: char) {
-        let line = self.get_line(self.cursor_line).unwrap_or_default();
-        if let Some(pos) = line[..self.cursor_column].rfind(target) {
+        let line = self.get_line(self.cursor_line()).unwrap_or_default();
+        if let Some(pos) = line[..self.cursor_column()].rfind(target) {
             use super::text_buffer::{Position, Range};
-            let start_pos = Position::new(self.cursor_line, pos);
-            let end_pos = Position::new(self.cursor_line, self.cursor_column);
+            let start_pos = Position::new(self.cursor_line(), pos);
+            let end_pos = Position::new(self.cursor_line(), self.cursor_column());
             let range = Range::new(start_pos, end_pos);
             self.text_buffer.delete(range);
             self.cursor_column = pos;
@@ -797,24 +926,17 @@ impl Document {
 
     pub fn open_line_below(&mut self) {
         self.cursor_line += 1;
-        self.cursor_column = 0;
-        self.insert_line_at(self.cursor_line, "");
+        self.reset_cursor_column();
+        self.insert_line_at(self.cursor_line(), "");
         self.modified = true;
     }
 
     pub fn open_line_above(&mut self) {
-        self.insert_line_at(self.cursor_line, "");
-        self.cursor_column = 0;
+        self.insert_line_at(self.cursor_line(), "");
+        self.reset_cursor_column();
         self.modified = true;
     }
 
-    pub fn clamp_cursor_column(&mut self) {
-        let line_len = self.get_line_length(self.cursor_line);
-        
-        if self.cursor_column > line_len {
-            self.cursor_column = line_len;
-        }
-    }
 
     pub fn set_expand_tab(&mut self, expand: bool) {
         self.expand_tab = expand;
@@ -1010,24 +1132,24 @@ impl Document {
             let spaces = " ".repeat(tab_width);
             self.undo_manager
                 .add_action(super::undo::UndoAction::InsertText {
-                    line: self.cursor_line,
-                    column: self.cursor_column,
+                    line: self.cursor_line(),
+                    column: self.cursor_column(),
                     text: spaces.clone(),
                 });
             use super::text_buffer::Position;
-            let pos = Position::new(self.cursor_line, self.cursor_column);
+            let pos = Position::new(self.cursor_line(), self.cursor_column());
             self.text_buffer.insert(pos, &spaces);
             self.cursor_column += tab_width;
         } else {
             // Insert actual tab
             self.undo_manager
                 .add_action(super::undo::UndoAction::InsertText {
-                    line: self.cursor_line,
-                    column: self.cursor_column,
+                    line: self.cursor_line(),
+                    column: self.cursor_column(),
                     text: "\t".to_string(),
                 });
             use super::text_buffer::Position;
-            let pos = Position::new(self.cursor_line, self.cursor_column);
+            let pos = Position::new(self.cursor_line(), self.cursor_column());
             self.text_buffer.insert(pos, "\t");
             self.cursor_column += 1;
         }
@@ -1042,7 +1164,7 @@ impl Document {
         };
 
         use super::text_buffer::Position;
-        let pos = Position::new(self.cursor_line, 0);
+        let pos = Position::new(self.cursor_line(), 0);
         self.text_buffer.insert(pos, &indent);
         
         self.cursor_column += if use_spaces { tab_width } else { 1 };
@@ -1074,7 +1196,7 @@ impl Document {
     }
 
     pub fn dedent_line(&mut self, tab_width: usize) {
-        if let Some(line) = self.get_line(self.cursor_line) {
+        if let Some(line) = self.get_line(self.cursor_line()) {
             let chars_to_remove;
             
             // Try to remove a tab first
@@ -1095,11 +1217,11 @@ impl Document {
             
             if chars_to_remove > 0 {
                 use super::text_buffer::{Position, Range};
-                let start_pos = Position::new(self.cursor_line, 0);
-                let end_pos = Position::new(self.cursor_line, chars_to_remove);
+                let start_pos = Position::new(self.cursor_line(), 0);
+                let end_pos = Position::new(self.cursor_line(), chars_to_remove);
                 let range = Range::new(start_pos, end_pos);
                 self.text_buffer.delete(range);
-                self.cursor_column = self.cursor_column.saturating_sub(chars_to_remove);
+                self.cursor_column = self.cursor_column().saturating_sub(chars_to_remove);
                 self.modified = true;
             }
         }
@@ -1201,17 +1323,17 @@ impl Document {
     // Yank (copy) operations - return text to be copied to registers
 
     pub fn yank_line(&self) -> String {
-        if !self.is_empty() && self.cursor_line < self.line_count() {
-            self.get_line(self.cursor_line).unwrap_or_default()
+        if !self.is_empty() && self.cursor_line() < self.line_count() {
+            self.get_line(self.cursor_line()).unwrap_or_default()
         } else {
             String::new()
         }
     }
 
     pub fn yank_to_end_of_line(&self) -> String {
-        if let Some(line) = self.get_line(self.cursor_line) {
-            if self.cursor_column <= line.len() {
-                line[self.cursor_column..].to_string()
+        if let Some(line) = self.get_line(self.cursor_line()) {
+            if self.cursor_column() <= line.len() {
+                line[self.cursor_column()..].to_string()
             } else {
                 String::new()
             }
@@ -1221,8 +1343,8 @@ impl Document {
     }
 
     pub fn yank_word_forward(&self) -> String {
-        let start_line = self.cursor_line;
-        let start_col = self.cursor_column;
+        let start_line = self.cursor_line();
+        let start_col = self.cursor_column();
 
         let (end_line, end_col) = self.calculate_word_forward_position();
 
@@ -1230,8 +1352,8 @@ impl Document {
     }
 
     pub fn yank_big_word_forward(&self) -> String {
-        let start_line = self.cursor_line;
-        let start_col = self.cursor_column;
+        let start_line = self.cursor_line();
+        let start_col = self.cursor_column();
 
         let (end_line, end_col) = self.calculate_big_word_forward_position();
 
@@ -1239,8 +1361,8 @@ impl Document {
     }
 
     pub fn yank_word_backward(&self) -> String {
-        let end_line = self.cursor_line;
-        let end_col = self.cursor_column;
+        let end_line = self.cursor_line();
+        let end_col = self.cursor_column();
 
         let (start_line, start_col) = self.calculate_word_backward_position();
 
@@ -1248,8 +1370,8 @@ impl Document {
     }
 
     pub fn yank_big_word_backward(&self) -> String {
-        let end_line = self.cursor_line;
-        let end_col = self.cursor_column;
+        let end_line = self.cursor_line();
+        let end_col = self.cursor_column();
 
         let (start_line, start_col) = self.calculate_big_word_backward_position();
 
@@ -1257,8 +1379,8 @@ impl Document {
     }
 
     pub fn yank_to_end_of_word(&self) -> String {
-        let start_line = self.cursor_line;
-        let start_col = self.cursor_column;
+        let start_line = self.cursor_line();
+        let start_col = self.cursor_column();
 
         let (end_line, end_col_raw) = self.calculate_word_end_position();
         let end_col = end_col_raw + 1; // Include the character at cursor
@@ -1267,8 +1389,8 @@ impl Document {
     }
 
     pub fn yank_to_end_of_big_word(&self) -> String {
-        let start_line = self.cursor_line;
-        let start_col = self.cursor_column;
+        let start_line = self.cursor_line();
+        let start_col = self.cursor_column();
 
         let (end_line, end_col_raw) = self.calculate_big_word_end_position();
         let end_col = end_col_raw + 1; // Include the character at cursor
@@ -1277,9 +1399,9 @@ impl Document {
     }
 
     pub fn yank_to_start_of_line(&self) -> String {
-        if let Some(line) = self.get_line(self.cursor_line) {
-            if self.cursor_column <= line.len() {
-                line[..self.cursor_column].to_string()
+        if let Some(line) = self.get_line(self.cursor_line()) {
+            if self.cursor_column() <= line.len() {
+                line[..self.cursor_column()].to_string()
             } else {
                 line.to_string()
             }
@@ -1289,12 +1411,12 @@ impl Document {
     }
 
     pub fn yank_to_first_non_whitespace(&self) -> String {
-        if let Some(line) = self.get_line(self.cursor_line) {
+        if let Some(line) = self.get_line(self.cursor_line()) {
             let first_non_ws = line.chars().position(|c| !c.is_whitespace()).unwrap_or(0);
-            if self.cursor_column >= first_non_ws {
-                line[first_non_ws..self.cursor_column].to_string()
+            if self.cursor_column() >= first_non_ws {
+                line[first_non_ws..self.cursor_column()].to_string()
             } else {
-                line[self.cursor_column..first_non_ws].to_string()
+                line[self.cursor_column()..first_non_ws].to_string()
             }
         } else {
             String::new()
@@ -1302,8 +1424,8 @@ impl Document {
     }
 
     pub fn yank_to_end_of_file(&self) -> String {
-        let start_line = self.cursor_line;
-        let start_col = self.cursor_column;
+        let start_line = self.cursor_line();
+        let start_col = self.cursor_column();
         let end_line = self.line_count().saturating_sub(1);
         let end_col = if !self.is_empty() {
             self.get_line_length(end_line)
@@ -1317,15 +1439,15 @@ impl Document {
     pub fn yank_to_start_of_file(&self) -> String {
         let start_line = 0;
         let start_col = 0;
-        let end_line = self.cursor_line;
-        let end_col = self.cursor_column;
+        let end_line = self.cursor_line();
+        let end_col = self.cursor_column();
 
         self.get_text_range(start_line, start_col, end_line, end_col)
     }
 
     pub fn yank_until_char(&self, target: char) -> String {
-        let start_line = self.cursor_line;
-        let start_col = self.cursor_column;
+        let start_line = self.cursor_line();
+        let start_col = self.cursor_column();
 
         if let Some((end_line, end_col)) = self.find_char_position(target, true, true) {
             self.get_text_range(start_line, start_col, end_line, end_col)
@@ -1335,8 +1457,8 @@ impl Document {
     }
 
     pub fn yank_until_char_backward(&self, target: char) -> String {
-        let end_line = self.cursor_line;
-        let end_col = self.cursor_column;
+        let end_line = self.cursor_line();
+        let end_col = self.cursor_column();
 
         if let Some((start_line, start_col)) = self.find_char_position(target, false, true) {
             self.get_text_range(start_line, start_col + 1, end_line, end_col)
@@ -1346,8 +1468,8 @@ impl Document {
     }
 
     pub fn yank_find_char(&self, target: char) -> String {
-        let start_line = self.cursor_line;
-        let start_col = self.cursor_column;
+        let start_line = self.cursor_line();
+        let start_col = self.cursor_column();
 
         if let Some((end_line, end_col)) = self.find_char_position(target, true, false) {
             self.get_text_range(start_line, start_col, end_line, end_col + 1)
@@ -1357,8 +1479,8 @@ impl Document {
     }
 
     pub fn yank_find_char_backward(&self, target: char) -> String {
-        let end_line = self.cursor_line;
-        let end_col = self.cursor_column;
+        let end_line = self.cursor_line();
+        let end_col = self.cursor_column();
 
         if let Some((start_line, start_col)) = self.find_char_position(target, false, false) {
             self.get_text_range(start_line, start_col, end_line, end_col)
@@ -1377,9 +1499,9 @@ impl Document {
     }
 
     pub fn change_line(&mut self) -> String {
-        let deleted = self.get_line(self.cursor_line).unwrap_or_default();
-        self.set_line(self.cursor_line, "");
-        self.cursor_column = 0;
+        let deleted = self.get_line(self.cursor_line()).unwrap_or_default();
+        self.set_line(self.cursor_line(), "");
+        self.reset_cursor_column();
         self.modified = true;
         deleted
     }
@@ -1477,11 +1599,11 @@ impl Document {
     // Helper method to get character at cursor
     #[allow(dead_code)]
     fn get_char_at_cursor(&self) -> String {
-        if self.cursor_line < self.line_count() {
-            let line = self.get_line(self.cursor_line).unwrap_or_default();
-            if self.cursor_column < self.get_line_length(self.cursor_line) {
+        if self.cursor_line() < self.line_count() {
+            let line = self.get_line(self.cursor_line()).unwrap_or_default();
+            if self.cursor_column() < self.get_line_length(self.cursor_line()) {
                 let chars: Vec<char> = line.chars().collect();
-                chars[self.cursor_column].to_string()
+                chars[self.cursor_column()].to_string()
             } else {
                 String::new()
             }
@@ -1496,11 +1618,11 @@ impl Document {
         let line_count = self.line_count();
         
         // Check if we can join (not at the last line)
-        if self.cursor_line >= line_count - 1 {
+        if self.cursor_line() >= line_count - 1 {
             return false;
         }
 
-        let current_line = self.cursor_line;
+        let current_line = self.cursor_line();
         let next_line = current_line + 1;
 
         // Get the lines to join
@@ -1558,22 +1680,22 @@ impl Document {
     /// Toggle case of character at cursor position
     /// Returns true if a character was toggled, false if no character at cursor
     pub fn toggle_case_char(&mut self) -> bool {
-        if self.cursor_line >= self.line_count() {
+        if self.cursor_line() >= self.line_count() {
             return false;
         }
 
-        let line = self.get_line(self.cursor_line).unwrap_or_default();
+        let line = self.get_line(self.cursor_line()).unwrap_or_default();
         
-        if self.cursor_column >= line.len() {
+        if self.cursor_column() >= line.len() {
             return false;
         }
 
         let chars: Vec<char> = line.chars().collect();
-        if self.cursor_column >= chars.len() {
+        if self.cursor_column() >= chars.len() {
             return false;
         }
 
-        let original_char = chars[self.cursor_column];
+        let original_char = chars[self.cursor_column()];
         let new_char = if original_char.is_uppercase() {
             original_char.to_lowercase().collect::<String>()
         } else if original_char.is_lowercase() {
@@ -1585,27 +1707,27 @@ impl Document {
         // Record undo action
         self.undo_manager
             .add_action(super::undo::UndoAction::DeleteText {
-                line: self.cursor_line,
-                column: self.cursor_column,
+                line: self.cursor_line(),
+                column: self.cursor_column(),
                 text: original_char.to_string(),
             });
         self.undo_manager
             .add_action(super::undo::UndoAction::InsertText {
-                line: self.cursor_line,
-                column: self.cursor_column,
+                line: self.cursor_line(),
+                column: self.cursor_column(),
                 text: new_char.clone(),
             });
 
         // Replace character using piece table
         use super::text_buffer::{Position, Range};
-        let char_start = Position::new(self.cursor_line, self.cursor_column);
-        let char_end = Position::new(self.cursor_line, self.cursor_column + 1);
+        let char_start = Position::new(self.cursor_line(), self.cursor_column());
+        let char_end = Position::new(self.cursor_line(), self.cursor_column() + 1);
         let range = Range::new(char_start, char_end);
         self.text_buffer.replace(range, &new_char);
 
         // Move cursor forward (vim behavior)
-        let line_length = self.get_line_length(self.cursor_line);
-        if self.cursor_column < line_length.saturating_sub(1) {
+        let line_length = self.get_line_length(self.cursor_line());
+        if self.cursor_column() < line_length.saturating_sub(1) {
             self.cursor_column += 1;
         }
 
@@ -1615,64 +1737,64 @@ impl Document {
 
     /// Convert current line to lowercase
     pub fn lowercase_line(&mut self) {
-        if self.cursor_line >= self.line_count() {
+        if self.cursor_line() >= self.line_count() {
             return;
         }
 
-        if let Some(original_line) = self.get_line(self.cursor_line) {
+        if let Some(original_line) = self.get_line(self.cursor_line()) {
             let lowercase_line = original_line.to_lowercase();
 
             if original_line != lowercase_line {
                 // Record undo action
                 self.undo_manager
                     .add_action(super::undo::UndoAction::DeleteText {
-                        line: self.cursor_line,
+                        line: self.cursor_line(),
                         column: 0,
                         text: original_line,
                     });
                 self.undo_manager
                     .add_action(super::undo::UndoAction::InsertText {
-                        line: self.cursor_line,
+                        line: self.cursor_line(),
                         column: 0,
                         text: lowercase_line.clone(),
                     });
 
-                self.set_line(self.cursor_line, &lowercase_line);
+                self.set_line(self.cursor_line(), &lowercase_line);
                 self.modified = true;
                 // Ensure cursor column remains valid after line modification
-                self.clamp_cursor_column();
+                self.clamp_cursor_column_to_current_line();
             }
         }
     }
 
     /// Convert current line to uppercase
     pub fn uppercase_line(&mut self) {
-        if self.cursor_line >= self.line_count() {
+        if self.cursor_line() >= self.line_count() {
             return;
         }
 
-        if let Some(original_line) = self.get_line(self.cursor_line) {
+        if let Some(original_line) = self.get_line(self.cursor_line()) {
             let uppercase_line = original_line.to_uppercase();
 
             if original_line != uppercase_line {
                 // Record undo action
                 self.undo_manager
                     .add_action(super::undo::UndoAction::DeleteText {
-                        line: self.cursor_line,
+                        line: self.cursor_line(),
                         column: 0,
                         text: original_line,
                     });
                 self.undo_manager
                     .add_action(super::undo::UndoAction::InsertText {
-                        line: self.cursor_line,
+                        line: self.cursor_line(),
                         column: 0,
                         text: uppercase_line.clone(),
                     });
 
-                self.set_line(self.cursor_line, &uppercase_line);
+                self.set_line(self.cursor_line(), &uppercase_line);
                 self.modified = true;
                 // Ensure cursor column remains valid after line modification
-                self.clamp_cursor_column();
+                self.clamp_cursor_column_to_current_line();
             }
         }
     }
@@ -1700,13 +1822,13 @@ impl Document {
 
     // Position calculation functions for yank operations - eliminates document cloning
     fn calculate_word_forward_position(&self) -> (usize, usize) {
-        let mut cursor_line = self.cursor_line;
-        let mut cursor_column = self.cursor_column;
+        let mut cursor_line = self.cursor_line();
+        let mut cursor_column = self.cursor_column();
 
         let line = self.get_line(cursor_line).unwrap_or_default();
 
         // If at end of line, move to next line
-        if cursor_column >= self.get_line_length(self.cursor_line) {
+        if cursor_column >= self.get_line_length(self.cursor_line()) {
             if cursor_line < self.line_count() - 1 {
                 cursor_line += 1;
                 cursor_column = 0;
@@ -1783,15 +1905,15 @@ impl Document {
     }
 
     fn calculate_word_backward_position(&self) -> (usize, usize) {
-        let mut cursor_line = self.cursor_line;
-        let mut cursor_column = self.cursor_column;
+        let mut cursor_line = self.cursor_line();
+        let mut cursor_column = self.cursor_column();
 
         // If at beginning of line, move to end of previous line
         if cursor_column == 0 {
             if cursor_line > 0 {
                 cursor_line -= 1;
                 let line = self.get_line(cursor_line).unwrap_or_default();
-                cursor_column = self.get_line_length(self.cursor_line);
+                cursor_column = self.get_line_length(self.cursor_line());
                 // Find last non-whitespace character
                 let chars: Vec<char> = line.chars().collect();
                 while cursor_column > 0 && chars[cursor_column - 1].is_whitespace() {
@@ -1843,11 +1965,11 @@ impl Document {
     }
 
     fn calculate_word_end_position(&self) -> (usize, usize) {
-        let cursor_line = self.cursor_line;
-        let mut cursor_column = self.cursor_column;
+        let cursor_line = self.cursor_line();
+        let mut cursor_column = self.cursor_column();
 
         let line = self.get_line(cursor_line).unwrap_or_default();
-        if cursor_column < self.get_line_length(self.cursor_line) {
+        if cursor_column < self.get_line_length(self.cursor_line()) {
             let chars: Vec<char> = line.chars().collect();
 
             // If on whitespace, move to start of next word first
@@ -1869,12 +1991,12 @@ impl Document {
     }
 
     fn calculate_big_word_forward_position(&self) -> (usize, usize) {
-        let mut cursor_line = self.cursor_line;
-        let mut cursor_column = self.cursor_column;
+        let mut cursor_line = self.cursor_line();
+        let mut cursor_column = self.cursor_column();
 
         loop {
             let line = self.get_line(cursor_line).unwrap_or_default();
-            if cursor_column >= self.get_line_length(self.cursor_line) {
+            if cursor_column >= self.get_line_length(self.cursor_line()) {
                 if cursor_line < self.line_count() - 1 {
                     cursor_line += 1;
                     cursor_column = 0;
@@ -1912,8 +2034,8 @@ impl Document {
     }
 
     fn calculate_big_word_backward_position(&self) -> (usize, usize) {
-        let mut cursor_line = self.cursor_line;
-        let mut cursor_column = self.cursor_column;
+        let mut cursor_line = self.cursor_line();
+        let mut cursor_column = self.cursor_column();
 
         loop {
             if cursor_column == 0 {
@@ -1947,11 +2069,11 @@ impl Document {
     }
 
     fn calculate_big_word_end_position(&self) -> (usize, usize) {
-        let cursor_line = self.cursor_line;
-        let mut cursor_column = self.cursor_column;
+        let cursor_line = self.cursor_line();
+        let mut cursor_column = self.cursor_column();
 
         let line = self.get_line(cursor_line).unwrap_or_default();
-        if cursor_column < self.get_line_length(self.cursor_line) {
+        if cursor_column < self.get_line_length(self.cursor_line()) {
             let chars: Vec<char> = line.chars().collect();
 
             // If on whitespace, move to start of next word first
@@ -1976,9 +2098,9 @@ impl Document {
         forward: bool,
         before: bool,
     ) -> Option<(usize, usize)> {
-        let line = self.get_line(self.cursor_line).unwrap_or_default();
+        let line = self.get_line(self.cursor_line()).unwrap_or_default();
         let chars: Vec<char> = line.chars().collect();
-        let mut cursor_column = self.cursor_column;
+        let mut cursor_column = self.cursor_column();
 
         if forward {
             let start = if before {
@@ -1989,7 +2111,7 @@ impl Document {
             for (i, ch) in chars.iter().enumerate().skip(start) {
                 if *ch == target {
                     cursor_column = if before && i > 0 { i - 1 } else { i };
-                    return Some((self.cursor_line, cursor_column));
+                    return Some((self.cursor_line(), cursor_column));
                 }
             }
         } else {
@@ -2005,7 +2127,7 @@ impl Document {
                     } else {
                         i
                     };
-                    return Some((self.cursor_line, cursor_column));
+                    return Some((self.cursor_line(), cursor_column));
                 }
             }
         }
@@ -2014,12 +2136,12 @@ impl Document {
     }
 
     pub fn get_word_under_cursor(&self) -> Option<String> {
-        if self.cursor_line >= self.line_count() {
+        if self.cursor_line() >= self.line_count() {
             return None;
         }
 
-        let line = self.get_line(self.cursor_line).unwrap_or_default();
-        if self.cursor_column >= self.get_line_length(self.cursor_line) {
+        let line = self.get_line(self.cursor_line()).unwrap_or_default();
+        if self.cursor_column() >= self.get_line_length(self.cursor_line()) {
             return None;
         }
 
@@ -2028,7 +2150,7 @@ impl Document {
             return None;
         }
 
-        let cursor_pos = self.cursor_column.min(chars.len().saturating_sub(1));
+        let cursor_pos = self.cursor_column().min(chars.len().saturating_sub(1));
         let ch = chars[cursor_pos];
 
         // Only search for words containing alphanumeric characters or underscores
@@ -2058,22 +2180,22 @@ impl Document {
     pub fn find_matching_bracket(&self) -> Option<(usize, usize)> {
         let line_count = self.line_count();
         
-        if self.cursor_line >= line_count {
+        if self.cursor_line() >= line_count {
             return None;
         }
 
-        let line = self.get_line(self.cursor_line).unwrap_or_default();
+        let line = self.get_line(self.cursor_line()).unwrap_or_default();
         
-        if self.cursor_column >= self.get_line_length(self.cursor_line) {
+        if self.cursor_column() >= self.get_line_length(self.cursor_line()) {
             return None;
         }
 
         let chars: Vec<char> = line.chars().collect();
-        if chars.is_empty() || self.cursor_column >= chars.len() {
+        if chars.is_empty() || self.cursor_column() >= chars.len() {
             return None;
         }
 
-        let cursor_char = chars[self.cursor_column];
+        let cursor_char = chars[self.cursor_column()];
 
         // Define bracket pairs
         let bracket_pairs = [('(', ')'), ('[', ']'), ('{', '}'), ('<', '>')];
@@ -2094,10 +2216,10 @@ impl Document {
 
         if is_opening {
             // Search forward for closing bracket
-            self.find_closing_bracket(opening, closing, self.cursor_line, self.cursor_column)
+            self.find_closing_bracket(opening, closing, self.cursor_line(), self.cursor_column())
         } else {
             // Search backward for opening bracket
-            self.find_opening_bracket(opening, closing, self.cursor_line, self.cursor_column)
+            self.find_opening_bracket(opening, closing, self.cursor_line(), self.cursor_column())
         }
     }
 
@@ -2105,21 +2227,21 @@ impl Document {
     pub fn is_unmatched_bracket(&self) -> Option<(usize, usize)> {
         let line_count = self.line_count();
         
-        if self.cursor_line >= line_count {
+        if self.cursor_line() >= line_count {
             return None;
         }
 
-        let line = self.get_line(self.cursor_line).unwrap_or_default();
-        if self.cursor_column >= self.get_line_length(self.cursor_line) {
+        let line = self.get_line(self.cursor_line()).unwrap_or_default();
+        if self.cursor_column() >= self.get_line_length(self.cursor_line()) {
             return None;
         }
 
         let chars: Vec<char> = line.chars().collect();
-        if chars.is_empty() || self.cursor_column >= chars.len() {
+        if chars.is_empty() || self.cursor_column() >= chars.len() {
             return None;
         }
 
-        let cursor_char = chars[self.cursor_column];
+        let cursor_char = chars[self.cursor_column()];
 
         // Define bracket pairs
         let bracket_pairs = [('(', ')'), ('[', ']'), ('{', '}'), ('<', '>')];
@@ -2140,16 +2262,16 @@ impl Document {
 
         // Try to find the matching bracket
         let has_match = if is_opening {
-            self.find_closing_bracket(opening, closing, self.cursor_line, self.cursor_column)
+            self.find_closing_bracket(opening, closing, self.cursor_line(), self.cursor_column())
                 .is_some()
         } else {
-            self.find_opening_bracket(opening, closing, self.cursor_line, self.cursor_column)
+            self.find_opening_bracket(opening, closing, self.cursor_line(), self.cursor_column())
                 .is_some()
         };
 
         // If no match found, this bracket is unmatched
         if !has_match {
-            Some((self.cursor_line, self.cursor_column))
+            Some((self.cursor_line(), self.cursor_column()))
         } else {
             None
         }
@@ -2331,15 +2453,14 @@ mod tests {
         // Piece table is now the only backend
         
         // Test insert_char uses piece table
-        doc.cursor_line = 0;
-        doc.cursor_column = 0;
+        doc.move_cursor_to(0, 0);
         doc.insert_char('H');
         doc.insert_char('i');
         doc.insert_char('!');
         
         // Verify content using piece table methods
         assert_eq!(doc.get_line(0).unwrap_or_default(), "Hi!");
-        assert_eq!(doc.cursor_column, 3);
+        assert_eq!(doc.cursor_column(), 3);
         
         let piece_table_content = doc.get_piece_table_content();
         assert_eq!(piece_table_content, "Hi!");
@@ -2347,19 +2468,19 @@ mod tests {
         // Test delete_char uses piece table  
         doc.delete_char(); // Delete '!'
         assert_eq!(doc.get_line(0).unwrap_or_default(), "Hi");
-        assert_eq!(doc.cursor_column, 2);
+        assert_eq!(doc.cursor_column(), 2);
         
         let piece_table_content = doc.get_piece_table_content();
         assert_eq!(piece_table_content, "Hi");
         
         // Test insert_newline uses piece table
-        doc.cursor_column = 1; // Position after 'H'
+        doc.move_cursor_to(doc.cursor_line(), 1); // Position after 'H'
         doc.insert_newline();
         assert_eq!(doc.line_count(), 2);
         assert_eq!(doc.get_line(0).unwrap_or_default(), "H");
         assert_eq!(doc.get_line(1).unwrap_or_default(), "i");
-        assert_eq!(doc.cursor_line, 1);
-        assert_eq!(doc.cursor_column, 0);
+        assert_eq!(doc.cursor_line(), 1);
+        assert_eq!(doc.cursor_column(), 0);
         
         let piece_table_content = doc.get_piece_table_content();
         assert_eq!(piece_table_content, "H\ni");

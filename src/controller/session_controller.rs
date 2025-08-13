@@ -1,11 +1,11 @@
 use crate::document_model::Document;
 
-pub struct BufferManager {
+pub struct SessionController {
     pub buffers: Vec<Document>,
     pub current_buffer: usize,
 }
 
-impl BufferManager {
+impl SessionController {
     pub fn new() -> Self {
         Self {
             buffers: vec![Document::new()],
@@ -289,7 +289,7 @@ impl BufferManager {
                 *status_message = "Line indented".to_string();
             }
             Command::IndentLines(count) => {
-                let current_line = self.current_document().cursor_line;
+                let current_line = self.current_document().cursor_line();
                 self.current_document_mut().indent_lines(current_line, count, tab_width, use_spaces);
                 *status_message = format!("{} lines indented", count);
             }
@@ -298,7 +298,7 @@ impl BufferManager {
                 *status_message = "Line dedented".to_string();
             }
             Command::DedentLines(count) => {
-                let current_line = self.current_document().cursor_line;
+                let current_line = self.current_document().cursor_line();
                 self.current_document_mut().dedent_lines(current_line, count, tab_width);
                 *status_message = format!("{} lines dedented", count);
             }

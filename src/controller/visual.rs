@@ -48,13 +48,13 @@ impl ModeController for VisualController {
                 Command::EnterInsertMode => {
                     // Delete selection and enter insert mode
                     if let Some(selection) = &self.visual_selection {
-                        VisualModeHandler::delete_selection(selection, shared.buffer_manager.current_document_mut());
+                        VisualModeHandler::delete_selection(selection, shared.session_controller.current_document_mut());
                     }
                     self.visual_selection = None;
-                    let doc = shared.buffer_manager.current_document();
-                    let cursor_pos = (doc.cursor_line, doc.cursor_column);
-                    shared.buffer_manager.current_document_mut()
-                        .undo_manager
+                    let doc = shared.session_controller.current_document();
+                    let cursor_pos = (doc.cursor_line(), doc.cursor_column());
+                    shared.session_controller.current_document_mut()
+                        .undo_manager_mut()
                         .start_group(cursor_pos);
                     return ModeTransition::ToMode(Mode::Insert);
                 }
@@ -62,7 +62,7 @@ impl ModeController for VisualController {
                 // Visual mode operations
                 Command::Yank(_, _) => {
                     if let Some(selection) = &self.visual_selection {
-                        let selected_text = VisualModeHandler::get_selected_text(selection, shared.buffer_manager.current_document());
+                        let selected_text = VisualModeHandler::get_selected_text(selection, shared.session_controller.current_document());
                         let register_type = match selection.mode {
                             VisualMode::Line => crate::document_model::RegisterType::Line,
                             VisualMode::Char => crate::document_model::RegisterType::Character,
@@ -76,7 +76,7 @@ impl ModeController for VisualController {
                 
                 Command::DeleteChar => {
                     if let Some(selection) = &self.visual_selection {
-                        VisualModeHandler::delete_selection(selection, shared.buffer_manager.current_document_mut());
+                        VisualModeHandler::delete_selection(selection, shared.session_controller.current_document_mut());
                     }
                     self.visual_selection = None;
                     return ModeTransition::ToMode(Mode::Normal);
@@ -84,14 +84,14 @@ impl ModeController for VisualController {
                 
                 Command::IndentLine => {
                     if let Some(selection) = &self.visual_selection {
-                        VisualModeHandler::indent_selection(selection, shared.buffer_manager.current_document_mut(), shared.view.get_tab_stop(), true); // Default to spaces
+                        VisualModeHandler::indent_selection(selection, shared.session_controller.current_document_mut(), shared.view.get_tab_stop(), true); // Default to spaces
                     }
                     // Stay in visual mode after indenting
                 }
                 
                 Command::DedentLine => {
                     if let Some(selection) = &self.visual_selection {
-                        VisualModeHandler::dedent_selection(selection, shared.buffer_manager.current_document_mut(), shared.view.get_tab_stop());
+                        VisualModeHandler::dedent_selection(selection, shared.session_controller.current_document_mut(), shared.view.get_tab_stop());
                     }
                     // Stay in visual mode after dedenting
                 }
@@ -104,8 +104,8 @@ impl ModeController for VisualController {
                     
                     // Update selection end position
                     if let Some(selection) = &mut self.visual_selection {
-                        let doc = shared.buffer_manager.current_document();
-                        selection.update_end(doc.cursor_line, doc.cursor_column);
+                        let doc = shared.session_controller.current_document();
+                        selection.update_end(doc.cursor_line(), doc.cursor_column());
                     }
                 }
                 
@@ -123,14 +123,14 @@ impl ModeController for VisualController {
 impl VisualController {
     fn execute_movement_command(&self, command: Command, shared: &mut SharedEditorState) {
         match command {
-            Command::MoveUp => shared.buffer_manager.current_document_mut().move_cursor_up(),
-            Command::MoveDown => shared.buffer_manager.current_document_mut().move_cursor_down(),
-            Command::MoveLeft => shared.buffer_manager.current_document_mut().move_cursor_left(),
-            Command::MoveRight => shared.buffer_manager.current_document_mut().move_cursor_right(),
-            Command::MoveWordForward => shared.buffer_manager.current_document_mut().move_word_forward(),
-            Command::MoveWordBackward => shared.buffer_manager.current_document_mut().move_word_backward(),
-            Command::MoveLineStart => shared.buffer_manager.current_document_mut().move_line_start(),
-            Command::MoveLineEnd => shared.buffer_manager.current_document_mut().move_line_end(),
+            Command::MoveUp => { let _ = shared.session_controller.current_document_mut().move_cursor_up(); },
+            Command::MoveDown => { let _ = shared.session_controller.current_document_mut().move_cursor_down(); },
+            Command::MoveLeft => { let _ = shared.session_controller.current_document_mut().move_cursor_left(); },
+            Command::MoveRight => { let _ = shared.session_controller.current_document_mut().move_cursor_right(); },
+            Command::MoveWordForward => shared.session_controller.current_document_mut().move_word_forward(),
+            Command::MoveWordBackward => shared.session_controller.current_document_mut().move_word_backward(),
+            Command::MoveLineStart => shared.session_controller.current_document_mut().move_line_start(),
+            Command::MoveLineEnd => shared.session_controller.current_document_mut().move_line_end(),
             // Add more movement commands as needed
             _ => {}
         }

@@ -269,8 +269,9 @@ impl VisualModeHandler {
         }
 
         // Update cursor position
-        document.cursor_line = start_line.min(get_line_count(document) - 1);
-        document.cursor_column = start_col.min(document.get_line(document.cursor_line).unwrap_or_default().len());
+        let safe_line = start_line.min(get_line_count(document) - 1);
+        let safe_col = start_col.min(document.get_line(safe_line).unwrap_or_default().len());
+        document.move_cursor_to(safe_line, safe_col);
         document.modified = true;
     }
 

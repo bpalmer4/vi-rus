@@ -6,12 +6,11 @@ pub struct SearchCommands;
 impl SearchCommands {
     /// Execute next search (n command)
     pub fn next(search_state: &mut SearchState, document: &mut Document, status_message: &mut String) {
-        let line = document.cursor_line;
-        let col = document.cursor_column;
+        let line = document.cursor_line();
+        let col = document.cursor_column();
 
         if let Some(search_match) = search_state.repeat_last_search(line, col) {
-            document.cursor_line = search_match.line;
-            document.cursor_column = search_match.start_col;
+            document.move_cursor_to(search_match.line, search_match.start_col);
             
             // Show match count if available
             if let (Some(current), matches) = (search_state.current_match_index(), search_state.matches.len()) {
@@ -34,12 +33,11 @@ impl SearchCommands {
 
     /// Execute previous search (N command)
     pub fn previous(search_state: &mut SearchState, document: &mut Document, status_message: &mut String) {
-        let line = document.cursor_line;
-        let col = document.cursor_column;
+        let line = document.cursor_line();
+        let col = document.cursor_column();
 
         if let Some(search_match) = search_state.repeat_last_search_reverse(line, col) {
-            document.cursor_line = search_match.line;
-            document.cursor_column = search_match.start_col;
+            document.move_cursor_to(search_match.line, search_match.start_col);
             
             // Show match count if available
             if let (Some(current), matches) = (search_state.current_match_index(), search_state.matches.len()) {

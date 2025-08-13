@@ -41,8 +41,8 @@ impl<'a> DocumentViewModel<'a> {
 impl<'a> ViewModel for DocumentViewModel<'a> {
     fn get_cursor_position(&self) -> CursorPosition {
         CursorPosition {
-            line: self.document.cursor_line,
-            column: self.document.cursor_column,
+            line: self.document.cursor_line(),
+            column: self.document.cursor_column(),
         }
     }
     

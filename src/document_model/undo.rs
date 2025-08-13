@@ -151,8 +151,7 @@ impl UndoGroup {
             action.apply_to_document(document);
         }
         // Set cursor to after position
-        document.cursor_line = self.cursor_after.0.min(document.line_count().saturating_sub(1));
-        document.cursor_column = self.cursor_after.1.min(document.get_line_length(document.cursor_line));
+        let _ = document.set_cursor(self.cursor_after.0, self.cursor_after.1);
     }
 
     /// Apply the reverse of this undo group to a document (for undo operations)  
@@ -163,8 +162,7 @@ impl UndoGroup {
             reverse_action.apply_to_document(document);
         }
         // Set cursor to before position
-        document.cursor_line = self.cursor_before.0.min(document.line_count().saturating_sub(1));
-        document.cursor_column = self.cursor_before.1.min(document.get_line_length(document.cursor_line));
+        let _ = document.set_cursor(self.cursor_before.0, self.cursor_before.1);
     }
 }
 

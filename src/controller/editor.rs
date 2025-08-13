@@ -4,7 +4,8 @@ use crate::controller::insert::InsertController;
 use crate::controller::normal::NormalController;
 use crate::controller::visual::VisualController;
 use crate::controller::command::CommandController;
-use crate::view::{BufferManager, View, RenderParams, DocumentViewModel, BracketHighlight};
+use crate::controller::SessionController;
+use crate::view::{View, RenderParams, DocumentViewModel, BracketHighlight};
 use crate::document_model::{MarkManager, RegisterManager, SearchState, SearchDirection};
 use crossterm::{
     event::{self, Event, KeyCode, KeyEvent},
@@ -32,7 +33,7 @@ impl EditorController {
     pub fn new() -> Self {
         Self {
             shared_state: SharedEditorState {
-                buffer_manager: BufferManager::new(),
+                session_controller: SessionController::new(),
                 view: View::new(),
                 mark_manager: MarkManager::new(),
                 register_manager: RegisterManager::new(),
@@ -51,12 +52,12 @@ impl EditorController {
     }
     
     pub fn new_with_files(filenames: Vec<PathBuf>) -> Result<Self, Box<dyn std::error::Error>> {
-        // Use BufferManager's efficient new_with_files method
-        let buffer_manager = BufferManager::new_with_files(filenames)?;
+        // Use SessionController's efficient new_with_files method
+        let session_controller = SessionController::new_with_files(filenames)?;
         
         let controller = Self {
             shared_state: SharedEditorState {
-                buffer_manager,
+                session_controller,
                 view: View::new(),
                 mark_manager: MarkManager::new(),
                 register_manager: RegisterManager::new(),
@@ -92,8 +93,8 @@ impl EditorController {
         loop {
             let buffer_info = format!(
                 "Buffer {}/{}: \"{}\"",
-                self.shared_state.buffer_manager.current_buffer_index() + 1,
-                self.shared_state.buffer_manager.buffer_count(),
+                self.shared_state.session_controller.current_buffer_index() + 1,
+                self.shared_state.session_controller.buffer_count(),
                 self.get_display_filename()
             );
 
@@ -103,7 +104,7 @@ impl EditorController {
             }
 
             // Borrow fields separately to avoid borrowing conflicts
-            let doc = self.shared_state.buffer_manager.current_document();
+            let doc = self.shared_state.session_controller.current_document();
 
             // Create view model adapter
             let view_model = DocumentViewModel::new(doc);
@@ -201,16 +202,16 @@ impl EditorController {
         // Handle initialization for the new mode
         match new_mode {
             Mode::VisualChar => {
-                let doc = self.shared_state.buffer_manager.current_document();
-                self.visual_controller.start_selection(new_mode, doc.cursor_line, doc.cursor_column);
+                let doc = self.shared_state.session_controller.current_document();
+                self.visual_controller.start_selection(new_mode, doc.cursor_line(), doc.cursor_column());
             }
             Mode::VisualLine => {
-                let doc = self.shared_state.buffer_manager.current_document();
-                self.visual_controller.start_selection(new_mode, doc.cursor_line, doc.cursor_column);
+                let doc = self.shared_state.session_controller.current_document();
+                self.visual_controller.start_selection(new_mode, doc.cursor_line(), doc.cursor_column());
             }
             Mode::VisualBlock => {
-                let doc = self.shared_state.buffer_manager.current_document();
-                self.visual_controller.start_selection(new_mode, doc.cursor_line, doc.cursor_column);
+                let doc = self.shared_state.session_controller.current_document();
+                self.visual_controller.start_selection(new_mode, doc.cursor_line(), doc.cursor_column());
             }
             Mode::Command => {
                 self.command_controller.command_buffer.clear();
@@ -244,7 +245,7 @@ impl EditorController {
                     SearchDirection::Backward
                 };
                 
-                let doc = self.shared_state.buffer_manager.current_document();
+                let doc = self.shared_state.session_controller.current_document();
                 if let Ok(_) = crate::controller::search_commands::SearchCommands::start_search(
                     &mut self.shared_state.search_state,
                     doc,
@@ -253,9 +254,8 @@ impl EditorController {
                 ) {
                     // Find first match and move cursor there
                     if let Some(search_match) = self.shared_state.search_state.find_next_match(0, 0) {
-                        let doc = self.shared_state.buffer_manager.current_document_mut();
-                        doc.cursor_line = search_match.line;
-                        doc.cursor_column = search_match.start_col;
+                        let doc = self.shared_state.session_controller.current_document_mut();
+                        doc.move_cursor_to(search_match.line, search_match.start_col);
                     }
                 }
                 self.command_buffer.clear();
@@ -280,7 +280,7 @@ impl EditorController {
     }
     
     fn get_display_filename(&self) -> String {
-        self.shared_state.buffer_manager.get_display_filename().to_string()
+        self.shared_state.session_controller.get_display_filename().to_string()
     }
     
     fn refresh_unmatched_cache_if_needed(&mut self) {

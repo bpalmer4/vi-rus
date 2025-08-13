@@ -43,7 +43,7 @@ impl YankPasteHandler {
             YankType::Lines(count) => {
                 let mut lines = Vec::new();
                 for i in 0..*count {
-                    let line_idx = document.cursor_line + i;
+                    let line_idx = document.cursor_line() + i;
                     if line_idx < get_line_count(document) {
                         lines.push(document.get_line(line_idx).unwrap_or_default());
                     } else {
@@ -107,8 +107,8 @@ impl YankPasteHandler {
     fn paste_line_wise(document: &mut Document, content: &str, paste_type: &PasteType) {
         let lines: Vec<&str> = content.lines().collect();
         let insert_line = match paste_type {
-            PasteType::After => document.cursor_line + 1,
-            PasteType::Before => document.cursor_line,
+            PasteType::After => document.cursor_line() + 1,
+            PasteType::Before => document.cursor_line(),
         };
 
         for (i, line) in lines.iter().enumerate() {
@@ -116,14 +116,13 @@ impl YankPasteHandler {
         }
 
         // Move cursor to first line of pasted content
-        document.cursor_line = insert_line;
-        document.cursor_column = 0;
+        document.move_cursor_to(insert_line, 0);
     }
 
     fn paste_character_wise(document: &mut Document, content: &str, paste_type: &PasteType) {
-        if document.cursor_line < get_line_count(document) {
-            let line_length = document.get_line_length(document.cursor_line);
-            let mut insert_col = document.cursor_column;
+        if document.cursor_line() < get_line_count(document) {
+            let line_length = document.get_line_length(document.cursor_line());
+            let mut insert_col = document.cursor_column();
 
             match paste_type {
                 PasteType::After => {
@@ -138,9 +137,10 @@ impl YankPasteHandler {
 
             if insert_col <= line_length {
                 use crate::document_model::Position;
-                let pos = Position::new(document.cursor_line, insert_col);
-                document.text_buffer.insert(pos, content);
-                document.cursor_column = insert_col + content.len() - 1;
+                let pos = Position::new(document.cursor_line(), insert_col);
+                document.text_buffer_mut().insert(pos, content);
+                let new_col = insert_col + content.len() - 1;
+                document.move_cursor_to(document.cursor_line(), new_col);
                 document.modified = true;
             }
         }

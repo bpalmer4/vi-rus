@@ -1,11 +1,11 @@
-use crate::view::BufferManager;
+use crate::controller::SessionController;
 use crate::document_model::{MarkManager, RegisterManager, SearchState};
 use crate::view::View;
 use crossterm::event::KeyEvent;
 
 /// Shared state that all mode controllers need access to
 pub struct SharedEditorState {
-    pub buffer_manager: BufferManager,
+    pub session_controller: SessionController,
     pub view: View,
     pub mark_manager: MarkManager,
     pub register_manager: RegisterManager,

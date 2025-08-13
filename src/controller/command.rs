@@ -104,26 +104,26 @@ impl CommandController {
     fn execute_buffer_command(&mut self, trimmed: &str, shared: &mut SharedEditorState) -> Option<bool> {
         match trimmed {
             "ls" | "buffers" => {
-                shared.status_message = shared.buffer_manager.list_buffers();
+                shared.status_message = shared.session_controller.list_buffers();
                 Some(false)
             }
             "bn" | "bnext" => {
-                shared.status_message = shared.buffer_manager.next_buffer();
+                shared.status_message = shared.session_controller.next_buffer();
                 Some(false)
             }
             "bp" | "bprev" | "bprevious" => {
-                shared.status_message = shared.buffer_manager.prev_buffer();
+                shared.status_message = shared.session_controller.prev_buffer();
                 Some(false)
             }
             "bd" | "bdelete" => {
-                match shared.buffer_manager.close_buffer(&mut shared.mark_manager) {
+                match shared.session_controller.close_buffer(&mut shared.mark_manager) {
                     Ok(msg) => shared.status_message = msg,
                     Err(msg) => shared.status_message = msg,
                 }
                 Some(false)
             }
             "bd!" => {
-                match shared.buffer_manager.force_close_buffer(&mut shared.mark_manager) {
+                match shared.session_controller.force_close_buffer(&mut shared.mark_manager) {
                     Ok(msg) => shared.status_message = msg,
                     Err(msg) => shared.status_message = msg,
                 }
@@ -131,7 +131,7 @@ impl CommandController {
             }
             _ if trimmed.starts_with("b") && trimmed[1..].parse::<usize>().is_ok() => {
                 let buffer_num = trimmed[1..].parse::<usize>().unwrap();
-                match shared.buffer_manager.switch_to_buffer(buffer_num) {
+                match shared.session_controller.switch_to_buffer(buffer_num) {
                     Ok(msg) => shared.status_message = msg,
                     Err(msg) => shared.status_message = msg,
                 }
@@ -141,7 +141,7 @@ impl CommandController {
                 // Switch to buffer by filename
                 let filename = &trimmed[3..];
                 let path = std::path::PathBuf::from(filename);
-                match shared.buffer_manager.switch_to_file(&path) {
+                match shared.session_controller.switch_to_file(&path) {
                     Ok(_) => {
                         shared.status_message = format!("Switched to buffer: {}", filename);
                     }
@@ -159,7 +159,7 @@ impl CommandController {
         match trimmed {
             "q" | "quit" => {
                 // Check if file is modified
-                if shared.buffer_manager.current_document().is_modified() {
+                if shared.session_controller.current_document().is_modified() {
                     shared.status_message = "No write since last change (add ! to override)".to_string();
                     Some(false)
                 } else {
@@ -171,10 +171,10 @@ impl CommandController {
             }
             "w" | "write" => {
                 // Save current file
-                match shared.buffer_manager.current_document_mut().save() {
+                match shared.session_controller.current_document_mut().save() {
                     Ok(_) => {
                         shared.status_message = format!("\"{}\" written", 
-                            shared.buffer_manager.get_display_filename());
+                            shared.session_controller.get_display_filename());
                         Some(false)
                     }
                     Err(e) => {
@@ -185,10 +185,10 @@ impl CommandController {
             }
             "wq" | "x" => {
                 // Save and quit
-                match shared.buffer_manager.current_document_mut().save() {
+                match shared.session_controller.current_document_mut().save() {
                     Ok(_) => {
                         shared.status_message = format!("\"{}\" written", 
-                            shared.buffer_manager.get_display_filename());
+                            shared.session_controller.get_display_filename());
                         Some(true) // Quit after save
                     }
                     Err(e) => {
@@ -200,7 +200,7 @@ impl CommandController {
             _ if trimmed.starts_with("w ") => {
                 // Save to specific file
                 let filename = &trimmed[2..];
-                match shared.buffer_manager.current_document_mut().save_as(filename.into()) {
+                match shared.session_controller.current_document_mut().save_as(filename.into()) {
                     Ok(_) => {
                         shared.status_message = format!("\"{}\" written", filename);
                     }
@@ -237,27 +237,27 @@ impl CommandController {
                 Some(false)
             }
             "set et" | "set expandtab" => {
-                shared.buffer_manager.current_document_mut().set_expand_tab(true);
+                shared.session_controller.current_document_mut().set_expand_tab(true);
                 shared.status_message = "Tab key will insert spaces".to_string();
                 Some(false)
             }
             "set noet" | "set noexpandtab" => {
-                shared.buffer_manager.current_document_mut().set_expand_tab(false);
+                shared.session_controller.current_document_mut().set_expand_tab(false);
                 shared.status_message = "Tab key will insert tabs".to_string();
                 Some(false)
             }
             "set ff=unix" => {
-                shared.buffer_manager.current_document_mut().set_line_ending(crate::document_model::LineEnding::Unix);
+                shared.session_controller.current_document_mut().set_line_ending(crate::document_model::LineEnding::Unix);
                 shared.status_message = "Line endings set to Unix (LF)".to_string();
                 Some(false)
             }
             "set ff=dos" => {
-                shared.buffer_manager.current_document_mut().set_line_ending(crate::document_model::LineEnding::Windows);
+                shared.session_controller.current_document_mut().set_line_ending(crate::document_model::LineEnding::Windows);
                 shared.status_message = "Line endings set to DOS (CRLF)".to_string();
                 Some(false)
             }
             "set ff=mac" => {
-                shared.buffer_manager.current_document_mut().set_line_ending(crate::document_model::LineEnding::Mac);
+                shared.session_controller.current_document_mut().set_line_ending(crate::document_model::LineEnding::Mac);
                 shared.status_message = "Line endings set to Mac (CR)".to_string();
                 Some(false)
             }
@@ -282,7 +282,7 @@ impl CommandController {
     fn execute_utility_command(&mut self, trimmed: &str, shared: &mut SharedEditorState) -> Option<bool> {
         match trimmed {
             "help" | "h" | "?" => {
-                shared.buffer_manager.add_help_buffer();
+                shared.session_controller.add_help_buffer();
                 shared.status_message = "Help buffer opened".to_string();
                 Some(false)
             }
@@ -300,7 +300,7 @@ impl CommandController {
             }
             "detab" => {
                 let tab_width = shared.view.get_tab_stop();
-                let count = shared.buffer_manager.current_document_mut().tabs_to_spaces(tab_width);
+                let count = shared.session_controller.current_document_mut().tabs_to_spaces(tab_width);
                 shared.status_message = if count == 1 {
                     "1 tab converted to spaces".to_string()
                 } else {
@@ -310,7 +310,7 @@ impl CommandController {
             }
             "retab" => {
                 let tab_width = shared.view.get_tab_stop();
-                let count = shared.buffer_manager.current_document_mut().spaces_to_tabs(tab_width);
+                let count = shared.session_controller.current_document_mut().spaces_to_tabs(tab_width);
                 shared.status_message = if count == 1 {
                     "1 space sequence converted to tab".to_string()
                 } else {
@@ -319,7 +319,7 @@ impl CommandController {
                 Some(false)
             }
             "ascii" | "normalize" => {
-                let count = shared.buffer_manager.current_document_mut().ascii_normalize();
+                let count = shared.session_controller.current_document_mut().ascii_normalize();
                 shared.status_message = if count == 0 {
                     "No Unicode characters found to normalize".to_string()
                 } else if count == 1 {
@@ -330,7 +330,7 @@ impl CommandController {
                 Some(false)
             }
             "brackets" | "checkbrackets" => {
-                let unmatched = shared.buffer_manager.current_document().find_all_unmatched_brackets();
+                let unmatched = shared.session_controller.current_document().find_all_unmatched_brackets();
                 if unmatched.is_empty() {
                     shared.status_message = "All brackets are properly matched".to_string();
                 } else {
@@ -363,12 +363,12 @@ impl CommandController {
             }
             "e" => {
                 // Create new empty buffer
-                shared.status_message = shared.buffer_manager.create_new_buffer();
+                shared.status_message = shared.session_controller.create_new_buffer();
                 Some(false)
             }
             "badd" => {
                 // Add new empty buffer (similar to :enew but numbered)
-                shared.status_message = shared.buffer_manager.create_new_buffer();
+                shared.status_message = shared.session_controller.create_new_buffer();
                 Some(false)
             }
             _ if trimmed.starts_with("badd ") => {
@@ -376,7 +376,7 @@ impl CommandController {
                 let filenames_str = &trimmed[5..];
                 let filenames: Vec<&str> = filenames_str.split_whitespace().collect();
                 if !filenames.is_empty() {
-                    shared.status_message = shared.buffer_manager.open_files(filenames);
+                    shared.status_message = shared.session_controller.open_files(filenames);
                 } else {
                     shared.status_message = "No filename specified".to_string();
                 }
@@ -387,9 +387,9 @@ impl CommandController {
                 let filenames_str = &trimmed[2..];
                 let filenames: Vec<&str> = filenames_str.split_whitespace().collect();
                 if filenames.len() == 1 {
-                    shared.status_message = shared.buffer_manager.open_file(filenames[0]);
+                    shared.status_message = shared.session_controller.open_file(filenames[0]);
                 } else if filenames.len() > 1 {
-                    shared.status_message = shared.buffer_manager.open_files(filenames);
+                    shared.status_message = shared.session_controller.open_files(filenames);
                 } else {
                     shared.status_message = "No filename specified".to_string();
                 }
@@ -408,7 +408,7 @@ impl CommandController {
         // Handle file read operations (:r filename, :0r filename, :$r filename, etc.)
         if trimmed.starts_with("r ") {
             let filename = &trimmed[2..];
-            match shared.buffer_manager.current_document_mut().insert_file_at_cursor(filename.as_ref()) {
+            match shared.session_controller.current_document_mut().insert_file_at_cursor(filename.as_ref()) {
                 Ok(lines_added) => {
                     shared.status_message = format!("\"{}\" {} lines inserted", filename, lines_added);
                 }
@@ -420,7 +420,7 @@ impl CommandController {
         } else if trimmed.starts_with("0r ") {
             // Insert at beginning of file
             let filename = &trimmed[3..];
-            match shared.buffer_manager.current_document_mut().insert_file_at_line(filename.as_ref(), 0) {
+            match shared.session_controller.current_document_mut().insert_file_at_line(filename.as_ref(), 0) {
                 Ok(lines_added) => {
                     shared.status_message = format!("\"{}\" {} lines inserted at beginning", filename, lines_added);
                 }
@@ -432,8 +432,8 @@ impl CommandController {
         } else if trimmed.starts_with("$r ") {
             // Insert at end of file
             let filename = &trimmed[3..];
-            let line_count = shared.buffer_manager.current_document().line_count();
-            match shared.buffer_manager.current_document_mut().insert_file_at_line(filename.as_ref(), line_count) {
+            let line_count = shared.session_controller.current_document().line_count();
+            match shared.session_controller.current_document_mut().insert_file_at_line(filename.as_ref(), line_count) {
                 Ok(lines_added) => {
                     shared.status_message = format!("\"{}\" {} lines inserted at end", filename, lines_added);
                 }
@@ -447,7 +447,7 @@ impl CommandController {
             let line_part = &trimmed[..pos];
             if let Ok(line_num) = line_part.parse::<usize>() {
                 let filename = &trimmed[pos + 2..];
-                match shared.buffer_manager.current_document_mut().insert_file_at_line(filename.as_ref(), line_num) {
+                match shared.session_controller.current_document_mut().insert_file_at_line(filename.as_ref(), line_num) {
                     Ok(lines_added) => {
                         shared.status_message = format!("\"{}\" {} lines inserted after line {}", filename, lines_added, line_num);
                     }
@@ -463,13 +463,13 @@ impl CommandController {
         if let Ok(line_num) = trimmed.parse::<usize>() {
             if line_num > 0 {
                 // Add current position to jump list before jumping
-                let doc = shared.buffer_manager.current_document();
+                let doc = shared.session_controller.current_document();
                 let current_filename = doc.filename.clone();
-                shared.mark_manager.add_to_jump_list(doc.cursor_line, doc.cursor_column, current_filename);
+                shared.mark_manager.add_to_jump_list(doc.cursor_line(), doc.cursor_column(), current_filename);
                 
-                let doc = shared.buffer_manager.current_document_mut();
-                doc.cursor_line = (line_num - 1).min(doc.line_count().saturating_sub(1)); // Convert to 0-based and clamp
-                doc.cursor_column = 0;
+                let doc = shared.session_controller.current_document_mut();
+                let target_line = (line_num - 1).min(doc.line_count().saturating_sub(1)); // Convert to 0-based and clamp
+                doc.move_cursor_to(target_line, 0);
                 shared.status_message = format!("Jumped to line {}", line_num);
             }
             false
@@ -501,16 +501,16 @@ impl CommandController {
                     RangeType::Global => {
                         // %s - substitute in entire document
                         crate::controller::search_commands::SearchReplace::substitute_all_document(
-                            shared.buffer_manager.current_document_mut(),
+                            shared.session_controller.current_document_mut(),
                             pattern,
                             replacement,
                         )
                     }
                     RangeType::CurrentLine => {
                         // s - substitute in current line only
-                        let current_line = shared.buffer_manager.current_document().cursor_line;
+                        let current_line = shared.session_controller.current_document().cursor_line();
                         crate::controller::search_commands::SearchReplace::substitute_line(
-                            shared.buffer_manager.current_document_mut(),
+                            shared.session_controller.current_document_mut(),
                             current_line,
                             pattern,
                             replacement,
@@ -520,7 +520,7 @@ impl CommandController {
                     RangeType::LineRange(start, end) => {
                         // 5,10s - substitute in specified line range
                         crate::controller::search_commands::SearchReplace::substitute_range(
-                            shared.buffer_manager.current_document_mut(),
+                            shared.session_controller.current_document_mut(),
                             start,
                             end,
                             pattern,
@@ -557,7 +557,7 @@ impl CommandController {
         match trimmed {
             "marks" => {
                 // List all marks
-                let local_marks = shared.buffer_manager.current_document().get_all_local_marks();
+                let local_marks = shared.session_controller.current_document().get_all_local_marks();
                 let marks_vec = shared.mark_manager.list_marks(local_marks);
                 
                 // Format marks for display
@@ -591,7 +591,7 @@ impl CommandController {
             }
             "clear marks" => {
                 // Clear local marks in current document
-                shared.buffer_manager.current_document_mut().clear_local_marks();
+                shared.session_controller.current_document_mut().clear_local_marks();
                 // Clear global marks in mark manager
                 shared.mark_manager.clear_all_marks();
                 shared.status_message = "All marks cleared".to_string();
@@ -623,7 +623,7 @@ impl CommandController {
                 Ok(output) => {
                     let output_str = String::from_utf8_lossy(&output.stdout);
                     if !output_str.is_empty() {
-                        match shared.buffer_manager.current_document_mut().insert_text_at_cursor(&output_str) {
+                        match shared.session_controller.current_document_mut().insert_text_at_cursor(&output_str) {
                             Ok(lines_added) => {
                                 shared.status_message = format!("Command output: {} lines inserted", lines_added);
                             }

@@ -29,17 +29,17 @@ impl ModeController for InsertController {
                 Command::ExitInsertMode => {
                     // End undo group when leaving insert mode
                     let cursor_pos = {
-                        let doc = shared.buffer_manager.current_document();
-                        (doc.cursor_line, doc.cursor_column)
+                        let doc = shared.session_controller.current_document();
+                        (doc.cursor_line(), doc.cursor_column())
                     };
-                    shared.buffer_manager.current_document_mut()
-                        .undo_manager
+                    shared.session_controller.current_document_mut()
+                        .undo_manager_mut()
                         .end_group(cursor_pos);
 
                     // Mark last insert position when leaving insert mode
                     let cursor_pos = {
-                        let doc = shared.buffer_manager.current_document();
-                        (doc.cursor_line, doc.cursor_column)
+                        let doc = shared.session_controller.current_document();
+                        (doc.cursor_line(), doc.cursor_column())
                     };
                     shared.mark_manager
                         .set_last_insert(cursor_pos.0, cursor_pos.1);
@@ -47,38 +47,38 @@ impl ModeController for InsertController {
                     return ModeTransition::ToMode(Mode::Normal);
                 }
                 Command::InsertChar(c) => {
-                    shared.buffer_manager.current_document_mut().insert_char(c);
+                    shared.session_controller.current_document_mut().insert_char(c);
                     // Mark change position
-                    let doc = shared.buffer_manager.current_document();
+                    let doc = shared.session_controller.current_document();
                     shared.mark_manager
-                        .set_last_change(doc.cursor_line, doc.cursor_column);
+                        .set_last_change(doc.cursor_line(), doc.cursor_column());
                 }
                 Command::InsertNewline => {
-                    shared.buffer_manager.current_document_mut().insert_newline();
+                    shared.session_controller.current_document_mut().insert_newline();
                     // Mark change position
-                    let doc = shared.buffer_manager.current_document();
+                    let doc = shared.session_controller.current_document();
                     shared.mark_manager
-                        .set_last_change(doc.cursor_line, doc.cursor_column);
+                        .set_last_change(doc.cursor_line(), doc.cursor_column());
                 }
                 Command::InsertTab => {
                     let tab_width = shared.view.get_tab_stop();
-                    shared.buffer_manager.current_document_mut().insert_tab_or_spaces(tab_width);
+                    shared.session_controller.current_document_mut().insert_tab_or_spaces(tab_width);
                 }
                 Command::DeleteChar => {
-                    shared.buffer_manager.current_document_mut().delete_char();
+                    shared.session_controller.current_document_mut().delete_char();
                 }
                 // Movement commands in insert mode
                 Command::MoveLeft => {
-                    shared.buffer_manager.current_document_mut().move_cursor_left();
+                    shared.session_controller.current_document_mut().move_cursor_left();
                 }
                 Command::MoveRight => {
-                    shared.buffer_manager.current_document_mut().move_cursor_right();
+                    shared.session_controller.current_document_mut().move_cursor_right();
                 }
                 Command::MoveUp => {
-                    shared.buffer_manager.current_document_mut().move_cursor_up();
+                    shared.session_controller.current_document_mut().move_cursor_up();
                 }
                 Command::MoveDown => {
-                    shared.buffer_manager.current_document_mut().move_cursor_down();
+                    shared.session_controller.current_document_mut().move_cursor_down();
                 }
                 _ => {
                     // Unhandled command in insert mode
