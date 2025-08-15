@@ -81,6 +81,14 @@ impl MarkManager {
         }
     }
 
+    /// Delete a global mark (A-Z)
+    pub fn delete_global_mark(&mut self, mark_char: char) -> bool {
+        match mark_char {
+            'A'..='Z' => self.global_marks.remove(&mark_char).is_some(),
+            _ => false,
+        }
+    }
+
     /// Add a position to the jump list (for significant jumps)
     pub fn add_to_jump_list(&mut self, line: usize, column: usize, filename: Option<PathBuf>) {
         let entry = JumpListEntry {

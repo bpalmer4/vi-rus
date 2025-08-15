@@ -47,6 +47,10 @@ impl KeyHandler {
             KeyCode::Char('u') if modifiers.contains(KeyModifiers::CONTROL) => {
                 Some(Command::MoveHalfPageUp)
             }
+            // Alternative binding for half page down (in case Ctrl+D is intercepted by terminal)
+            KeyCode::Char('j') if modifiers.contains(KeyModifiers::ALT) => {
+                Some(Command::MoveHalfPageDown)
+            }
             KeyCode::Char('r') if modifiers.contains(KeyModifiers::CONTROL) => Some(Command::Redo),
             KeyCode::Char('l') if modifiers.contains(KeyModifiers::CONTROL) => {
                 Some(Command::Redraw)
@@ -479,60 +483,60 @@ impl KeyHandler {
                 }
             }
 
-            // Start multi-key sequences
-            KeyCode::Char('>') => {
+            // Start multi-key sequences (only for unmodified keys)
+            KeyCode::Char('>') if modifiers.is_empty() => {
                 *pending_key = Some('>');
                 None // Wait for second >
             }
-            KeyCode::Char('<') => {
+            KeyCode::Char('<') if modifiers.is_empty() => {
                 *pending_key = Some('<');
                 None // Wait for second <
             }
-            KeyCode::Char('d') => {
+            KeyCode::Char('d') if modifiers.is_empty() => {
                 *pending_key = Some('d');
                 None // Wait for second key (d, w, W, etc.)
             }
-            KeyCode::Char('y') => {
+            KeyCode::Char('y') if modifiers.is_empty() => {
                 *pending_key = Some('y');
                 None // Wait for second key (y, w, W, etc.)
             }
-            KeyCode::Char('c') => {
+            KeyCode::Char('c') if modifiers.is_empty() => {
                 *pending_key = Some('c');
                 None // Wait for second key (c, w, W, etc.)
             }
-            KeyCode::Char('m') => {
+            KeyCode::Char('m') if modifiers.is_empty() => {
                 *pending_key = Some('m');
                 None // Wait for mark character
             }
-            KeyCode::Char('\'') => {
+            KeyCode::Char('\'') if modifiers.is_empty() => {
                 *pending_key = Some('\'');
                 None // Wait for mark character (line jump)
             }
-            KeyCode::Char('`') => {
+            KeyCode::Char('`') if modifiers.is_empty() => {
                 *pending_key = Some('`');
                 None // Wait for mark character (exact position jump)
             }
-            KeyCode::Char('"') => {
+            KeyCode::Char('"') if modifiers.is_empty() => {
                 *pending_key = Some('"');
                 None // Wait for register name (a-z, A-Z, 0-9)
             }
-            KeyCode::Char('g') => {
+            KeyCode::Char('g') if modifiers.is_empty() => {
                 *pending_key = Some('g');
                 None // Wait for second key (g, u, U)
             }
-            KeyCode::Char('f') => {
+            KeyCode::Char('f') if modifiers.is_empty() => {
                 *pending_key = Some('f');
                 None // Wait for target character
             }
-            KeyCode::Char('F') => {
+            KeyCode::Char('F') if modifiers.is_empty() => {
                 *pending_key = Some('F');
                 None // Wait for target character
             }
-            KeyCode::Char('t') => {
+            KeyCode::Char('t') if modifiers.is_empty() => {
                 *pending_key = Some('t');
                 None // Wait for target character
             }
-            KeyCode::Char('T') => {
+            KeyCode::Char('T') if modifiers.is_empty() => {
                 *pending_key = Some('T');
                 None // Wait for target character
             }

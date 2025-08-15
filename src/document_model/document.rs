@@ -1078,6 +1078,15 @@ impl Document {
         }
     }
 
+    /// Delete a specific local mark
+    pub fn delete_local_mark(&mut self, mark_char: char) -> bool {
+        if mark_char.is_ascii_lowercase() {
+            self.local_marks.remove(&mark_char).is_some()
+        } else {
+            false
+        }
+    }
+
     /// Clear all local marks for this buffer
     pub fn clear_local_marks(&mut self) {
         self.local_marks.clear();

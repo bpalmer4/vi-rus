@@ -305,4 +305,22 @@ impl SessionController {
             _ => {}
         }
     }
+
+    /// Create a preview buffer with the given name and content
+    /// Returns Ok(()) if successful, Err(message) if failed
+    pub fn create_preview_buffer(&mut self, buffer_name: String, content: String) -> Result<(), String> {
+        let mut preview_doc = Document::from_string(content);
+        
+        // Set a special filename to indicate this is a preview buffer
+        preview_doc.filename = Some(std::path::PathBuf::from(buffer_name));
+        
+        // Mark as unmodified and read-only (conceptually)
+        preview_doc.modified = false;
+        
+        // Add to buffers and switch to it
+        self.buffers.push(preview_doc);
+        self.current_buffer = self.buffers.len() - 1;
+        
+        Ok(())
+    }
 }
