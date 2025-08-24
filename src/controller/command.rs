@@ -103,8 +103,11 @@ impl CommandController {
             }
             
             // Handle setting commands
-            if let Some(result) = self.execute_setting_command(&parsed.command, shared) {
-                return result;
+            if parsed.command == "set" && !parsed.args.is_empty() {
+                let setting_command = format!("set {}", parsed.args.join(" "));
+                if let Some(result) = self.execute_setting_command(&setting_command, shared) {
+                    return result;
+                }
             }
             
             // Handle mark management commands
@@ -183,7 +186,7 @@ impl CommandController {
         };
         
         // Split command and args
-        let (command, args) = if command_str.starts_with('s') && command_str.len() > 1 && !command_str.chars().nth(1).unwrap().is_whitespace() {
+        let (command, args) = if command_str.starts_with('s') && command_str.len() > 1 && !command_str.chars().nth(1).unwrap().is_whitespace() && command_str.chars().nth(1) == Some('/') {
             // Handle substitute command: s/old/new/flags
             ("s".to_string(), vec![command_str[1..].to_string()])
         } else {
